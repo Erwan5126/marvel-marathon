@@ -134,7 +134,34 @@ a{color:inherit;text-decoration:none}
 .year-sep:first-child{margin-top:0}
 
 /* ── Fiche programme (remplace le panel du bas) ── */
-.panel{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:none;align-items:center;justify-content:center;padding:1.5rem}
+.panel{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:none;align-items:center;justify-content:center;padding:1.5rem;gap:12px}
+.panel-nav{background:rgba(255,255,255,.1);border:none;color:#fff;font-size:24px;width:40px;height:60px;border-radius:8px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s;touch-action:manipulation}
+.panel-nav:hover{background:rgba(255,255,255,.2)}
+.panel-nav:disabled{opacity:.2;cursor:default}
+
+/* Panel mobile optimisé */
+body.is-mobile .panel{padding:8px 0;gap:0}
+body.is-mobile .panel-nav{display:none}
+body.is-mobile .panel-card{border-radius:14px;max-width:calc(100vw - 16px);max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+body.is-mobile .panel-layout{flex-direction:row}
+body.is-mobile #pPosterCol{width:110px !important;aspect-ratio:unset !important;flex-shrink:0;align-self:stretch;border-radius:14px 0 0 14px !important}
+body.is-mobile #pPosterImg{width:110px;height:100%;object-fit:cover;object-position:center top}
+body.is-mobile .panel-main{flex:1;min-width:0;overflow:hidden}
+body.is-mobile .panel-main-header{padding:8px 36px 6px 10px}
+body.is-mobile .panel-title{font-size:13px !important;line-height:1.2}
+body.is-mobile .panel-meta{font-size:11px}
+body.is-mobile .panel-chips{gap:4px;flex-wrap:wrap}
+body.is-mobile .panel-chip{padding:3px 7px;flex:1;min-width:60px}
+body.is-mobile .panel-chip span{font-size:8px}
+body.is-mobile .panel-chip strong{font-size:10px}
+body.is-mobile .panel-stars-row{padding:6px 10px 0}
+body.is-mobile .pstar{font-size:18px}
+body.is-mobile .panel-note{margin:6px 10px;font-size:12px}
+body.is-mobile .panel-actions{padding:6px 10px 10px;gap:5px}
+body.is-mobile .btn-watch{font-size:12px;padding:7px 10px;flex:1}
+body.is-mobile .panel-actions .btn-secondary{font-size:11px;padding:7px 9px}
+/* Swipe gauche/droite pour naviguer sur mobile */
+body.is-mobile .panel-card{touch-action:pan-y}
 .panel.open{display:flex}
 .panel-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;width:100%;max-width:680px;overflow:hidden;position:relative;animation:fadeUp .18s ease}
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -389,25 +416,21 @@ a{color:inherit;text-decoration:none}
   <!-- Ligne 1 : recherche + boutons actions -->
   <div class="controls-row">
     <input class="search" id="searchInput" placeholder="Rechercher..." oninput="render()" style="flex:1;min-width:0">
-    <button class="ctrl-icon-btn" onclick="openModal(null)" title="Ajouter">➕</button>
-    <button class="ctrl-icon-btn" onclick="openNext()" title="Prochain">▶</button>
-    <button class="ctrl-icon-btn" onclick="openStats()" title="Stats">📊</button>
-    <button class="ctrl-icon-btn" onclick="openExportModal()" title="Export">⬇</button>
-    <button class="ctrl-icon-btn" onclick="toggleMobileFilters()" id="filterToggleBtn" title="Filtres">⚙️</button>
+    <button class="ctrl-icon-btn" onclick="openModal(null)" title="Ajouter" style="background:rgba(201,151,58,.15);border-color:var(--gold);color:var(--gold)">＋</button>
+    <button class="ctrl-icon-btn" onclick="openStats()" title="Stats" style="background:rgba(201,151,58,.1)">📊</button>
+    <button class="ctrl-icon-btn" onclick="openExportModal()" title="Export" style="background:rgba(46,204,113,.1);border-color:#2ecc71;color:#2ecc71">↓</button>
+    <button class="ctrl-icon-btn" onclick="resetWatchHistory()" title="Reset" style="background:rgba(136,136,136,.1);border-color:#666;color:#888">↺</button>
+    <button class="ctrl-icon-btn" onclick="toggleMobileFilters()" id="filterToggleBtn" title="Filtres">▼</button>
   </div>
   <!-- Ligne 2 : vues -->
-  <div class="controls-row" style="gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap">
-    <button class="vtbtn" id="vBtnStudio" onclick="setView('studio',this)">📂</button>
-    <button class="vtbtn" id="vBtnChron" onclick="setView('chron',this)">📅</button>
-    <button class="vtbtn" id="vBtnMosaic" onclick="setView('mosaic',this)">🎬</button>
-    <button class="vtbtn on" id="vBtnTierlist" onclick="setView('tierlist',this)">🏆</button>
-    <select id="sortSelect" onchange="render()" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:14px;color:var(--muted);font-size:11px;font-family:'Barlow',sans-serif;outline:none;cursor:pointer;flex-shrink:0">
-      <option value="date">📆 Date</option>
-      <option value="rating">★ Note</option>
-      <option value="title">🔤 Titre</option>
-    </select>
+  <div class="controls-row" style="gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;padding-bottom:2px">
+    <button class="vtbtn" id="vBtnStudio" onclick="setView('studio',this)">Catégories</button>
+    <button class="vtbtn" id="vBtnChron" onclick="setView('chron',this)">Chronologie</button>
+    <button class="vtbtn" id="vBtnMosaic" onclick="setView('mosaic',this)">🎬 Mosaïque</button>
+    <button class="vtbtn on" id="vBtnTierlist" onclick="setView('tierlist',this)">🏆 Tier List</button>
+    <div style="width:1px;background:var(--border);flex-shrink:0;margin:0 2px;align-self:stretch"></div>
     <button class="fbtn on" onclick="setStatus('all',this)" style="flex-shrink:0">Tout</button>
-    <button class="fbtn" onclick="setStatus('watched',this)" style="flex-shrink:0">Vus ✓</button>
+    <button class="fbtn" onclick="setStatus('watched',this)" style="flex-shrink:0">Vus</button>
     <button class="fbtn" onclick="setStatus('unwatched',this)" style="flex-shrink:0">À voir</button>
   </div>
   <!-- Panneau filtres dépliable -->
@@ -416,16 +439,8 @@ a{color:inherit;text-decoration:none}
     <div class="filters" id="typeFilters"><button class="fbtn" style="color:#5A9FD4" onclick="toggleType('Film',this)">Film</button><button class="fbtn" style="color:#C9A0DC" onclick="toggleType('Court-Metrage',this)">Court-Metrage</button><button class="fbtn" style="color:#7BC67E" onclick="toggleType('Série',this)">Série</button><button class="fbtn" style="color:#F0AD4E" onclick="toggleType('Web Série',this)">Web Série</button><button class="fbtn" style="color:#F08080" onclick="toggleType('Moyen-Metrage',this)">Moyen-Metrage</button></div>
     <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:8px 0 4px">Studios</div>
     <div class="filters" id="catFilters"><button class="fbtn" style="color:#3A7BD5" onclick="toggleCat('Marvel Studio',this)">Marvel Studio</button><button class="fbtn" style="color:#2ECC71" onclick="toggleCat('Marvel Television',this)">Marvel Television</button><button class="fbtn" style="color:#E67E22" onclick="toggleCat('Marvel Fox',this)">Marvel Fox</button><button class="fbtn" style="color:#9B59B6" onclick="toggleCat('Marvel Sony',this)">Marvel Sony</button><button class="fbtn" style="color:#888" onclick="toggleCat('Autres',this)">Autres</button></div>
-    <div style="margin-top:8px;display:flex;gap:6px">
-      <button class="vtbtn" onclick="resetWatchHistory()" style="border-color:#888;color:#888;font-size:11px">↺ Reset</button>
-    </div>
   </div>
 </div>
-  <span class="leg"><span class="leg-dot" style="background:var(--ms)"></span> Marvel Studio</span>
-  <span class="leg"><span class="leg-dot" style="background:var(--mtv)"></span> Marvel Television</span>
-  <span class="leg"><span class="leg-dot" style="background:var(--fox)"></span> Marvel Fox</span>
-  <span class="leg"><span class="leg-dot" style="background:var(--sony)"></span> Marvel Sony</span>
-  <span class="leg"><span class="leg-dot" style="background:var(--other)"></span> Autres</span>
 </div>
 
 <div class="container" id="main"><div class="studio-section">
@@ -1796,6 +1811,7 @@ a{color:inherit;text-decoration:none}
     </div></div>
 
 <div class="panel" id="panel" onclick="handlePanelOverlayClick(event)">
+  <button class="panel-nav" id="panelPrev" onclick="navigatePanel(-1)" title="Précédent">‹</button>
   <div class="panel-card" id="panelCard">
     <button class="btn-close" onclick="closePanel()">✕</button>
     <!-- Hidden legacy hero elements (kept for JS compatibility) -->
@@ -1846,7 +1862,6 @@ a{color:inherit;text-decoration:none}
           <!-- Actions -->
           <div class="panel-actions">
             <button class="btn-watch btn-unwatch" id="pBtn" onclick="toggleCurrent()">✓ Vu</button>
-            <button class="btn-secondary" style="font-size:11px;padding:8px 12px" onclick="openNextFromPanel()">▶▶</button>
             <button class="btn-secondary" style="font-size:11px;padding:8px 12px" onclick="editCurrent()">✏️</button>
             <button class="btn-secondary" style="font-size:11px;padding:8px 12px;color:#e05;border-color:#e05" onclick="deleteCurrent()">🗑</button>
           </div>
@@ -1854,6 +1869,7 @@ a{color:inherit;text-decoration:none}
       </div>
     </div>
   </div>
+  <button class="panel-nav" id="panelNext" onclick="navigatePanel(1)" title="Suivant">›</button>
 </div>
 
 <!-- Add/Edit Modal -->
@@ -1905,7 +1921,7 @@ a{color:inherit;text-decoration:none}
     <div id="singleDurationRow" class="modal-2col" style="display: none;">
       <div class="modal-row">
         <label>Date de sortie</label>
-        <input id="fDate" type="date">
+        <input id="fDate" type="text" placeholder="jjmmaaaa" maxlength="10" oninput="autoFormatDate(this)" inputmode="numeric">
       </div>
       <div class="modal-row">
         <label>Durée (minutes)</label>
@@ -2131,41 +2147,7 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <!-- Prochain à regarder Modal -->
-<div class="next-overlay" id="nextOverlay" onclick="if(event.target===this)closeNext()">
-  <div class="next-modal">
-    <div class="next-modal-header">
-      <div class="next-modal-title">▶ Prochain à regarder</div>
-      <button class="btn-close" style="position:static;background:var(--bg3)" onclick="closeNext()">✕</button>
-    </div>
-    <div style="padding:8px 1.4rem;border-bottom:1px solid var(--border)">
-      <input id="nextSearch" class="search" placeholder="Rechercher un titre..." oninput="renderNext()" style="width:100%;min-width:0">
-    </div>
-    <div id="nextBody" style="max-height:70vh;overflow-y:auto"><div class="next-section">
-    <div class="next-section-label">🌍 Prochain global</div>
-    <div class="next-card" onclick="closeNext();openPanel(219)">
-    <div class="next-card-icon" style="background:#E67E2222">✖️</div>
-    <div class="next-card-info">
-      <div class="next-card-studio" style="color:#E67E22">Marvel Fox · Série</div>
-      <div class="next-card-title">Legion [01x05] Chapitre 5</div>
-      <div class="next-card-meta">08/03/2017 · 53min</div>
-    </div>
-    <button class="next-card-action" onclick="event.stopPropagation();closeNext();openDatePicker(219)">✓ Vu</button>
-  </div>
-  </div>
-  <div class="next-section">
-    <div class="next-section-label" style="color:#9B59B6">▸ Prochain — Marvel Sony</div>
-    <div class="next-card" onclick="closeNext();openPanel(383)">
-    <div class="next-card-icon" style="background:#9B59B622">🕷️</div>
-    <div class="next-card-info">
-      <div class="next-card-studio" style="color:#9B59B6">Marvel Sony · Film</div>
-      <div class="next-card-title">Venom</div>
-      <div class="next-card-meta">05/10/2018 · 1h52min</div>
-    </div>
-    <button class="next-card-action" onclick="event.stopPropagation();closeNext();openDatePicker(383)">✓ Vu</button>
-  </div>
-  </div></div>
-  </div>
-</div>
+
 
 <!-- Export Modal -->
 <div class="export-overlay" id="exportOverlay" onclick="if(event.target===this)closeExportModal()">
@@ -2194,7 +2176,7 @@ a{color:inherit;text-decoration:none}
   <div style="background:#1a1a1a;border:1px solid #333;border-radius:14px;padding:1.5rem;width:100%;max-width:320px;text-align:center">
     <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:#E23636;margin-bottom:6px">Quand l'as-tu vu ?</div>
     <div style="font-size:12px;color:#888;margin-bottom:16px">La date sera affichée sur la fiche</div>
-    <input type="date" id="dpDate" style="width:100%;padding:10px;background:#222;border:1px solid #444;border-radius:8px;color:#eee;font-size:14px;font-family:'Barlow',sans-serif;outline:none;margin-bottom:16px;text-align:center">
+    <input type="text" id="dpDate" placeholder="jjmmaaaa" maxlength="10" oninput="autoFormatDate(this)" inputmode="numeric" style="width:100%;padding:10px;background:#222;border:1px solid #444;border-radius:8px;color:#eee;font-size:14px;font-family:'Barlow',sans-serif;outline:none;margin-bottom:16px;text-align:center">
     <div style="display:flex;gap:8px">
       <button onclick="skipDatePicker()" style="flex:1;padding:9px;background:#222;border:1px solid #333;border-radius:7px;color:#888;font-size:12px;font-family:'Barlow',sans-serif;cursor:pointer">Passer</button>
       <button onclick="confirmDatePicker()" style="flex:2;padding:9px;background:#E23636;border:none;border-radius:7px;color:white;font-size:12px;font-family:'Barlow',sans-serif;font-weight:500;cursor:pointer">Confirmer</button>
@@ -2294,6 +2276,38 @@ let activeCategories = new Set();
 let statusFilter = 'all';
 let currentId = null;
 
+// Formate automatiquement une date saisie en jjmmaaaa → jj/mm/aaaa
+function autoFormatDate(el) {
+  let v = el.value.replace(/\D/g, ''); // garder seulement les chiffres
+  if (v.length > 8) v = v.slice(0, 8);
+  // Insérer les / automatiquement
+  if (v.length >= 5) v = v.slice(0,2) + '/' + v.slice(2,4) + '/' + v.slice(4);
+  else if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2);
+  el.value = v;
+}
+
+// Convertit jj/mm/aaaa → aaaa-mm-jj (format interne)
+function parseDateInput(val) {
+  if (!val) return '';
+  const clean = val.replace(/\D/g, '');
+  if (clean.length === 8) {
+    return clean.slice(4) + '-' + clean.slice(2,4) + '-' + clean.slice(0,2);
+  }
+  // Déjà au format aaaa-mm-jj ?
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  return val;
+}
+
+// Convertit aaaa-mm-jj → jj/mm/aaaa pour l'affichage dans les inputs
+function fmtDateForInput(val) {
+  if (!val) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    const [y,m,d] = val.split('-');
+    return d + '/' + m + '/' + y;
+  }
+  return val;
+}
+
 function save() {
   try {
     localStorage.setItem(LS('watched'),    JSON.stringify(watched));
@@ -2378,7 +2392,7 @@ function closeDatePicker() {
 function confirmDatePicker() {
   const raw = document.getElementById('dpOverlay').dataset.pendingId;
   const id = JSON.parse(raw);
-  const dateVal = document.getElementById('dpDate').value;
+  const dateVal = parseDateInput(document.getElementById('dpDate').value);
   watched[idStr(id)] = true;
   if (dateVal) watchDates[idStr(id)] = dateVal;
   save(); renderAll(); updatePanel();
@@ -2482,7 +2496,7 @@ function toggleCat(c, btn) {
 
 function filteredData() {
   const q = document.getElementById('searchInput').value.toLowerCase();
-  const sort = (document.getElementById('sortSelect')||{}).value || 'date';
+  const sort = 'date';
   let result = data.filter(d => {
     if (q && !d.title.toLowerCase().includes(q)) return false;
     if (activeTypes.size > 0 && !activeTypes.has(d.type)) return false;
@@ -2689,7 +2703,7 @@ function renderCategoryView(fd) {
     });
 
     renderItems.sort((a,b) => {
-      const sort = (document.getElementById('sortSelect')||{}).value || 'date';
+      const sort = 'date';
       if (sort === 'rating') return (b.sortRating||0) - (a.sortRating||0);
       if (sort === 'title')  return (a.sortTitle||'').localeCompare(b.sortTitle||'', 'fr');
       // default: date
@@ -3045,7 +3059,7 @@ function renderTierlist() {
 function renderChron(fd) {
   const container = document.getElementById('main');
   container.classList.add('list-view');
-  const sort = (document.getElementById('sortSelect')||{}).value || 'date';
+  const sort = 'date';
 
   let sorted;
   if (sort === 'rating') {
@@ -3176,6 +3190,7 @@ function updatePanel() {
 
   // Note
   document.getElementById('pNote').value = notes[idStr(d.id)] || '';
+  updatePanelNav();
 }
 
 function openModalByEid(btn) {
@@ -3215,7 +3230,7 @@ function addEpisodeRow(title='', date='', duration='') {
   const row = document.createElement('div');
   row.className = 'ep-form-row';
   row.innerHTML = `<input type="text" placeholder="Titre de l'épisode" value="${title.replace(/"/g,'&quot;')}">
-    <input type="date" value="${date}">
+    <input type="text" placeholder="jjmmaaaa" maxlength="10" value="${fmtDateForInput(date)}" oninput="autoFormatDate(this)" inputmode="numeric">
     <input type="number" placeholder="45" min="0" value="${duration}">
     <button class="ep-del-btn" onclick="this.parentElement.remove();cleanEpHeader()">✕</button>`;
   list.appendChild(row);
@@ -3286,7 +3301,7 @@ function openModal(id) {
       document.getElementById('fTitle').value = d.title;
       document.getElementById('fType').value = d.type;
       document.getElementById('fStudio').value = d.studio;
-      document.getElementById('fDate').value = d.releaseDate||'';
+      document.getElementById('fDate').value = fmtDateForInput(d.releaseDate||'');
       document.getElementById('fDuration').value = d.duration||'';
       const filmPoster = (userEntries[idStr(d.id)] || {}).poster || d.poster || '';
       document.getElementById('fPoster').value = filmPoster;
@@ -3336,7 +3351,7 @@ function saveModal() {
     for (const row of rows) {
       const inputs = row.querySelectorAll('input');
       const epTitle = inputs[0].value.trim() || `${title} — Épisode ${epNum}`;
-      const epDate = inputs[1].value || '';
+      const epDate = parseDateInput(inputs[1].value || '');
       const epDur = parseInt(inputs[2].value) || 0;
       const year = epDate ? epDate.split('-')[0] : String(new Date().getFullYear());
       episodes.push({ epTitle, epDate, epDur, year });
@@ -3419,7 +3434,7 @@ function saveModal() {
     }
 
   } else {
-    const date = document.getElementById('fDate').value || '';
+    const date = parseDateInput(document.getElementById('fDate').value || '');
     const duration = parseInt(document.getElementById('fDuration').value) || 0;
     const year = date ? date.split('-')[0] : String(new Date().getFullYear());
 
@@ -3456,6 +3471,26 @@ function deleteFromModal() {
     });
     save(); rebuildData(); buildFilters(); renderAll(); closeModal();
   });
+}
+
+function navigatePanel(dir) {
+  if (currentId === null) return;
+  const fd = getFilteredData();
+  const sorted = [...fd].sort((a,b) => (a.releaseDate||a.year+'') < (b.releaseDate||b.year+'') ? -1 : 1);
+  const idx = sorted.findIndex(d => idStr(d.id) === idStr(currentId));
+  if (idx === -1) return;
+  const next = sorted[idx + dir];
+  if (next) openPanel(next.id);
+}
+
+function updatePanelNav() {
+  const fd = getFilteredData();
+  const sorted = [...fd].sort((a,b) => (a.releaseDate||a.year+'') < (b.releaseDate||b.year+'') ? -1 : 1);
+  const idx = sorted.findIndex(d => idStr(d.id) === idStr(currentId));
+  const prevBtn = document.getElementById('panelPrev');
+  const nextBtn = document.getElementById('panelNext');
+  if (prevBtn) prevBtn.disabled = idx <= 0;
+  if (nextBtn) nextBtn.disabled = idx >= sorted.length - 1;
 }
 
 function editCurrent() { if (currentId!==null) openModal(currentId); }
@@ -3664,7 +3699,8 @@ function getNextUnwatchedAfter(items, afterId) {
   return sorted.find(x => !watched[idStr(x.id)]) || null;
 }
 
-function openNextFromPanel() {
+function openNextFromPanel() { /* removed */ }
+function _openNextFromPanel_DEAD() {
   if (currentId === null) return;
   let d = data.find(x => idStr(x.id) === idStr(currentId));
   if (!d) {
@@ -3703,12 +3739,14 @@ function openNextFromPanel() {
   document.body.style.overflow = 'hidden';
 }
 
-function openNext() {
+function openNext() { /* removed */ }
+function _openNext_DEAD() {
   renderNext();
   document.getElementById('nextOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
-function closeNext() {
+function closeNext() { /* removed */ }
+function _closeNext_DEAD() {
   document.getElementById('nextOverlay').classList.remove('open');
   document.body.style.overflow = '';
 }
@@ -4164,6 +4202,23 @@ renderAll();
       </div>
     </div></div>
 <script>
+// Swipe gauche/droite sur la fiche programme pour naviguer
+(function() {
+  let touchStartX = 0;
+  document.addEventListener('touchstart', function(e) {
+    const card = e.target.closest('.panel-card');
+    if (card) touchStartX = e.touches[0].clientX;
+  }, {passive: true});
+  document.addEventListener('touchend', function(e) {
+    const card = e.target.closest('.panel-card');
+    if (!card) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 60) {
+      navigatePanel(dx < 0 ? 1 : -1);
+    }
+  }, {passive: true});
+})();
+
 // Gestion scroll header (mobile)
 (function() {
   let lastScroll = 0;
@@ -4171,9 +4226,10 @@ renderAll();
     const headerFull = document.getElementById('headerFull');
     if (!headerFull) return;
     const scroll = window.scrollY;
-    if (scroll > 60 && scroll > lastScroll) {
+    if (scroll > 80 && scroll > lastScroll) {
       headerFull.classList.add('hidden');
-    } else if (scroll < lastScroll - 10 || scroll < 60) {
+    } else if (scroll < lastScroll - 20) {
+      // Réapparaît dès qu'on remonte de 20px
       headerFull.classList.remove('hidden');
     }
     lastScroll = scroll;
