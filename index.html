@@ -2456,13 +2456,20 @@ function toggleWatch(id) {
 
 function openDatePicker(id) {
   const today = new Date().toISOString().split('T')[0];
-  document.getElementById('dpDate').value = today;
+  document.getElementById('dpDate').value = fmtDateForInput(today); // jj/mm/aaaa
   document.getElementById('dpOverlay').style.display = 'flex';
   document.getElementById('dpOverlay').dataset.pendingId = JSON.stringify(id);
+  // Focus sur l'input pour faciliter la saisie
+  setTimeout(() => {
+    const el = document.getElementById('dpDate');
+    el.focus();
+    el.select();
+  }, 100);
 }
 
 function closeDatePicker() {
-  document.getElementById('dpOverlay').style.display = 'none';
+  const el = document.getElementById('dpOverlay');
+  el.style.setProperty('display', 'none', 'important');
 }
 
 function confirmDatePicker() {
