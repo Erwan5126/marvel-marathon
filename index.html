@@ -169,23 +169,22 @@ body.is-mobile #pPosterCol{display:none !important}
 /* Header mobile : infos à gauche, affiche à droite */
 body.is-mobile .panel-main{width:100%}
 body.is-mobile .panel-main-header{
-  padding:12px 12px 10px 12px;
-  border-bottom:1px solid var(--border);
+  padding:10px 10px 0 10px;
   display:flex;gap:10px;align-items:flex-start
 }
-body.is-mobile .panel-header-left{flex:1;min-width:0}
-body.is-mobile .panel-header-right{width:90px;flex-shrink:0}
-body.is-mobile .panel-header-poster{width:90px;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:#111}
+body.is-mobile .panel-header-left{flex:1;min-width:0;padding-bottom:10px}
+body.is-mobile .panel-header-right{flex-shrink:0;align-self:flex-start}
+body.is-mobile .panel-header-poster{width:110px;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:#111}
 body.is-mobile .panel-header-poster img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
 body.is-mobile .panel-badge{font-size:9px;padding:2px 6px}
-body.is-mobile .panel-title{font-size:14px !important;line-height:1.2;margin-top:4px}
+body.is-mobile .panel-title{font-size:15px !important;line-height:1.2;margin-top:3px}
 body.is-mobile .panel-meta{font-size:11px;margin-top:2px;color:var(--muted)}
-body.is-mobile .panel-stars-row{padding:6px 12px 2px;gap:4px;border:none}
+body.is-mobile .panel-stars-row{padding:6px 0 4px;gap:4px;border:none}
 body.is-mobile .pstar{font-size:18px}
 body.is-mobile #pChips .panel-chip:nth-child(1),
 body.is-mobile #pChips .panel-chip:nth-child(2),
 body.is-mobile #pChips .panel-chip:nth-child(4){display:none !important}
-body.is-mobile .panel-chips{display:flex;flex-wrap:wrap;gap:6px;padding:4px 12px 6px}
+body.is-mobile .panel-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px 0;border-bottom:1px solid var(--border)}
 body.is-mobile .panel-chip{padding:4px 10px;border-radius:8px}
 body.is-mobile .panel-chip span{font-size:9px}
 body.is-mobile .panel-chip strong{font-size:12px}
@@ -1880,6 +1879,16 @@ body.is-mobile .panel-mobile-nav-btn:disabled{opacity:.3}
             </div>
             <div class="panel-title" id="pTitle2" style="font-size:16px;line-height:1.25;margin-top:6px"></div>
             <div class="panel-meta" id="pMeta2" style="margin-top:4px"></div>
+            <!-- Stars + chips dans le header sur mobile -->
+            <div class="panel-stars-row panel-stars-in-header">
+              <span class="panel-stars-label">Ma note</span>
+              <div class="panel-stars" id="pStarsHeader"></div>
+              <span id="pRatingValHeader" style="font-size:11px;color:var(--gold);margin-left:4px"></span>
+            </div>
+            <div class="panel-chips panel-chips-in-header" id="pChipsHeader">
+              <div class="panel-chip"><span>Durée</span><strong id="pChipDurHeader"></strong></div>
+              <div class="panel-chip" id="pChipWatchedHeader"><span>👁 Vu le</span><strong id="pChipWatchedValHeader"></strong></div>
+            </div>
           </div>
           <div class="panel-header-right">
             <div class="panel-header-poster" id="pHeaderPoster">
@@ -3243,10 +3252,22 @@ function updatePanel() {
     wdChip.style.display = isW ? '' : 'none';
   }
 
-  // Stars
-  document.getElementById('pStars').innerHTML = [1,2,3,4,5].map(i=>`<span class="pstar${r>=i?' lit':''}" onclick="setRating(${JSON.stringify(d.id)},${i})">★</span>`).join('');
+  // Stars (panel body + header mobile)
+  const starsHtml = [1,2,3,4,5].map(i=>`<span class="pstar${r>=i?' lit':''}" onclick="setRating(${JSON.stringify(d.id)},${i})">★</span>`).join('');
+  document.getElementById('pStars').innerHTML = starsHtml;
+  const starsHeaderEl = document.getElementById('pStarsHeader');
+  if (starsHeaderEl) starsHeaderEl.innerHTML = starsHtml;
   const ratingVal = document.getElementById('pRatingVal');
   ratingVal.textContent = r > 0 ? r+'/5' : '';
+  const ratingValH = document.getElementById('pRatingValHeader');
+  if (ratingValH) ratingValH.textContent = r > 0 ? r+'/5' : '';
+  // Chips header mobile
+  const durH = document.getElementById('pChipDurHeader');
+  if (durH) durH.textContent = d.duration ? formatDur(d.duration) : '—';
+  const wdH = document.getElementById('pChipWatchedValHeader');
+  if (wdH) wdH.textContent = wd ? formatDate(wd) : '—';
+  const wdChipH = document.getElementById('pChipWatchedHeader');
+  if (wdChipH) wdChipH.style.display = isW ? '' : 'none';
 
   // Button
   const btn = document.getElementById('pBtn');
