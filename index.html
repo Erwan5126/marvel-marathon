@@ -346,42 +346,64 @@ a{color:inherit;text-decoration:none}
 </script></head>
 <body style="">
 
-<div class="header">
-  <div class="logo">⬡ Marvel Marathon</div>
-  <div class="sub">Tracker complet • Tous univers</div>
-  <div class="stats-bar">
-    <div class="stat"><div class="stat-val" id="sWatched">226</div><div class="stat-lbl">Vus</div></div>
-    <div class="stat"><div class="stat-val" id="sTotal">726</div><div class="stat-lbl">Total</div></div>
-    <div class="stat"><div class="stat-val" id="sPct">31%</div><div class="stat-lbl">Complété</div></div>
-    <div class="stat"><div class="stat-val" id="sHours">217h</div><div class="stat-lbl">Visionnées</div></div>
-    <div class="stat"><div class="stat-val" id="sRemain">410h</div><div class="stat-lbl">Restant</div></div>
+<div class="header" id="mainHeader">
+  <!-- Ligne compacte toujours visible -->
+  <div class="header-compact">
+    <div class="logo-small">⬡ Marvel Marathon</div>
+    <div class="header-compact-stats">
+      <span id="sWatchedCompact">226</span>/<span id="sTotalCompact">726</span>
+      <span style="color:var(--muted);font-size:10px">vus</span>
+      <span id="sPctCompact" style="color:var(--gold);margin-left:6px">31%</span>
+    </div>
+  </div>
+  <!-- Partie dépliable (cachée au scroll) -->
+  <div class="header-full" id="headerFull">
+    <div class="sub">Tracker complet • Tous univers</div>
+    <div class="stats-bar">
+      <div class="stat"><div class="stat-val" id="sWatched">226</div><div class="stat-lbl">Vus</div></div>
+      <div class="stat"><div class="stat-val" id="sTotal">726</div><div class="stat-lbl">Total</div></div>
+      <div class="stat"><div class="stat-val" id="sPct">31%</div><div class="stat-lbl">Complété</div></div>
+      <div class="stat"><div class="stat-val" id="sHours">217h</div><div class="stat-lbl">Visionnées</div></div>
+      <div class="stat"><div class="stat-val" id="sRemain">410h</div><div class="stat-lbl">Restant</div></div>
+    </div>
   </div>
   <div class="progress-wrap"><div class="progress-fill" id="progressFill" style="width: 31%;"></div></div>
 </div>
 
-<div class="controls">
-  <input class="search" id="searchInput" placeholder="Rechercher..." oninput="render()">
-  <div class="filters" id="typeFilters"><button class="fbtn" style="color:#5A9FD4" onclick="toggleType('Film',this)">Film</button><button class="fbtn" style="color:#C9A0DC" onclick="toggleType('Court-Metrage',this)">Court-Metrage</button><button class="fbtn" style="color:#7BC67E" onclick="toggleType('Série',this)">Série</button><button class="fbtn" style="color:#F0AD4E" onclick="toggleType('Web Série',this)">Web Série</button><button class="fbtn" style="color:#F08080" onclick="toggleType('Moyen-Metrage',this)">Moyen-Metrage</button></div>
-  <div class="filters" id="catFilters"><button class="fbtn" style="color:#3A7BD5" onclick="toggleCat('Marvel Studio',this)">Marvel Studio</button><button class="fbtn" style="color:#2ECC71" onclick="toggleCat('Marvel Television',this)">Marvel Television</button><button class="fbtn" style="color:#E67E22" onclick="toggleCat('Marvel Fox',this)">Marvel Fox</button><button class="fbtn" style="color:#9B59B6" onclick="toggleCat('Marvel Sony',this)">Marvel Sony</button><button class="fbtn" style="color:#888" onclick="toggleCat('Autres',this)">Autres</button></div>
-  <div class="filters">
-    <button class="fbtn on" onclick="setStatus('all',this)">Tout</button>
-    <button class="fbtn" onclick="setStatus('watched',this)">Vus ✓</button>
-    <button class="fbtn" onclick="setStatus('unwatched',this)">À voir</button>
-    <select id="sortSelect" onchange="render()" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:14px;color:var(--muted);font-size:11px;font-family:'Barlow',sans-serif;outline:none;cursor:pointer">
-      <option value="date">Tri : Date</option>
-      <option value="rating">Tri : Note ★</option>
-      <option value="title">Tri : Titre A→Z</option>
+<div class="controls" id="mainControls">
+  <!-- Ligne 1 : recherche + boutons actions -->
+  <div class="controls-row">
+    <input class="search" id="searchInput" placeholder="Rechercher..." oninput="render()" style="flex:1;min-width:0">
+    <button class="ctrl-icon-btn" onclick="openModal(null)" title="Ajouter">➕</button>
+    <button class="ctrl-icon-btn" onclick="openNext()" title="Prochain">▶</button>
+    <button class="ctrl-icon-btn" onclick="openStats()" title="Stats">📊</button>
+    <button class="ctrl-icon-btn" onclick="openExportModal()" title="Export">⬇</button>
+    <button class="ctrl-icon-btn" onclick="toggleMobileFilters()" id="filterToggleBtn" title="Filtres">⚙️</button>
+  </div>
+  <!-- Ligne 2 : vues -->
+  <div class="controls-row" style="gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap">
+    <button class="vtbtn" id="vBtnStudio" onclick="setView('studio',this)">📂</button>
+    <button class="vtbtn" id="vBtnChron" onclick="setView('chron',this)">📅</button>
+    <button class="vtbtn" id="vBtnMosaic" onclick="setView('mosaic',this)">🎬</button>
+    <button class="vtbtn on" id="vBtnTierlist" onclick="setView('tierlist',this)">🏆</button>
+    <select id="sortSelect" onchange="render()" style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:14px;color:var(--muted);font-size:11px;font-family:'Barlow',sans-serif;outline:none;cursor:pointer;flex-shrink:0">
+      <option value="date">📆 Date</option>
+      <option value="rating">★ Note</option>
+      <option value="title">🔤 Titre</option>
     </select>
-  <div class="view-toggle">
-    <button class="vtbtn" id="vBtnStudio" onclick="setView('studio',this)">Par catégorie</button>
-    <button class="vtbtn" id="vBtnChron" onclick="setView('chron',this)">Par date de sortie</button>
-    <button class="vtbtn" id="vBtnMosaic" onclick="setView('mosaic',this)">🎬 Mosaïque</button>
-    <button class="vtbtn on" id="vBtnTierlist" onclick="setView('tierlist',this)">🏆 Tier List</button>
-    <button class="vtbtn" onclick="openModal(null)" style="border-color:#C9973A;color:#C9973A">+ Ajouter</button>
-    <button class="vtbtn" onclick="resetWatchHistory()" style="border-color:#888;color:#888" title="Effacer l'historique">↺ Reset</button>
-    <button class="vtbtn" onclick="openNext()" style="border-color:#9B59B6;color:#9B59B6" title="Prochain à regarder">▶ Prochain</button>
-    <button class="vtbtn" onclick="openStats()" style="border-color:#C9973A;color:#C9973A" title="Statistiques">📊 Stats</button>
-    <button class="vtbtn" onclick="openExportModal()" style="border-color:#2ECC71;color:#2ECC71" title="Exporter">⬇ Export</button>
+    <button class="fbtn on" onclick="setStatus('all',this)" style="flex-shrink:0">Tout</button>
+    <button class="fbtn" onclick="setStatus('watched',this)" style="flex-shrink:0">Vus ✓</button>
+    <button class="fbtn" onclick="setStatus('unwatched',this)" style="flex-shrink:0">À voir</button>
+  </div>
+  <!-- Panneau filtres dépliable -->
+  <div class="filters-panel" id="filtersPanel" style="display:none">
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Types</div>
+    <div class="filters" id="typeFilters"><button class="fbtn" style="color:#5A9FD4" onclick="toggleType('Film',this)">Film</button><button class="fbtn" style="color:#C9A0DC" onclick="toggleType('Court-Metrage',this)">Court-Metrage</button><button class="fbtn" style="color:#7BC67E" onclick="toggleType('Série',this)">Série</button><button class="fbtn" style="color:#F0AD4E" onclick="toggleType('Web Série',this)">Web Série</button><button class="fbtn" style="color:#F08080" onclick="toggleType('Moyen-Metrage',this)">Moyen-Metrage</button></div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:8px 0 4px">Studios</div>
+    <div class="filters" id="catFilters"><button class="fbtn" style="color:#3A7BD5" onclick="toggleCat('Marvel Studio',this)">Marvel Studio</button><button class="fbtn" style="color:#2ECC71" onclick="toggleCat('Marvel Television',this)">Marvel Television</button><button class="fbtn" style="color:#E67E22" onclick="toggleCat('Marvel Fox',this)">Marvel Fox</button><button class="fbtn" style="color:#9B59B6" onclick="toggleCat('Marvel Sony',this)">Marvel Sony</button><button class="fbtn" style="color:#888" onclick="toggleCat('Autres',this)">Autres</button></div>
+    <div style="margin-top:8px;display:flex;gap:6px">
+      <button class="vtbtn" onclick="resetWatchHistory()" style="border-color:#888;color:#888;font-size:11px">↺ Reset</button>
+    </div>
   </div>
 </div>
   <span class="leg"><span class="leg-dot" style="background:var(--ms)"></span> Marvel Studio</span>
@@ -2694,8 +2716,11 @@ function updateStats() {
   const remDur = data.filter(d=>!watched[idStr(d.id)]).reduce((s,d)=>s+d.duration,0);
   const pct = Math.round(w/total*100);
   document.getElementById('sWatched').textContent = w;
+  if (document.getElementById('sWatchedCompact')) document.getElementById('sWatchedCompact').textContent = w;
+  if (document.getElementById('sTotalCompact')) document.getElementById('sTotalCompact').textContent = total;
   document.getElementById('sTotal').textContent = total;
   document.getElementById('sPct').textContent = pct+'%';
+  if (document.getElementById('sPctCompact')) document.getElementById('sPctCompact').textContent = pct+'%';
   document.getElementById('sHours').textContent = Math.floor(wDur/60)+'h';
   document.getElementById('sRemain').textContent = Math.floor(remDur/60)+'h';
   document.getElementById('progressFill').style.width = pct+'%';
@@ -4124,6 +4149,32 @@ renderAll();
       </div>
     </div></div>
 <script>
+// Gestion scroll header (mobile)
+(function() {
+  let lastScroll = 0;
+  window.addEventListener('scroll', function() {
+    const headerFull = document.getElementById('headerFull');
+    if (!headerFull) return;
+    const scroll = window.scrollY;
+    if (scroll > 60 && scroll > lastScroll) {
+      headerFull.classList.add('hidden');
+    } else if (scroll < lastScroll - 10 || scroll < 60) {
+      headerFull.classList.remove('hidden');
+    }
+    lastScroll = scroll;
+  }, {passive: true});
+})();
+
+function toggleMobileFilters() {
+  const panel = document.getElementById('filtersPanel');
+  const btn = document.getElementById('filterToggleBtn');
+  if (!panel) return;
+  const open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  btn.style.color = open ? '' : 'var(--gold)';
+  btn.style.borderColor = open ? '' : 'var(--gold)';
+}
+
 // Service Worker pour mode offline PWA
 if ('serviceWorker' in navigator) {
   const swCode = `
