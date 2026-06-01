@@ -169,10 +169,11 @@ body.is-mobile #pPosterCol{display:none !important}
 /* Header mobile : infos à gauche, affiche à droite */
 body.is-mobile .panel-main{width:100%}
 body.is-mobile .panel-main-header{
-  padding:10px 10px 0 10px;
-  display:flex;gap:10px;align-items:flex-start
+  padding:10px 10px 10px 10px;
+  display:flex;gap:10px;align-items:flex-start;
+  border-bottom:none !important
 }
-body.is-mobile .panel-header-left{flex:1;min-width:0;padding-bottom:10px}
+body.is-mobile .panel-header-left{flex:1;min-width:0;padding-bottom:10px;border-bottom:1px solid var(--border)}
 body.is-mobile .panel-header-right{flex-shrink:0;align-self:flex-start}
 body.is-mobile .panel-header-poster{width:110px;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:#111}
 body.is-mobile .panel-header-poster img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
@@ -184,7 +185,7 @@ body.is-mobile .pstar{font-size:18px}
 body.is-mobile #pChips .panel-chip:nth-child(1),
 body.is-mobile #pChips .panel-chip:nth-child(2),
 body.is-mobile #pChips .panel-chip:nth-child(4){display:none !important}
-body.is-mobile .panel-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px 0;border-bottom:1px solid var(--border)}
+body.is-mobile .panel-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 0 0}
 body.is-mobile .panel-chip{padding:4px 10px;border-radius:8px}
 body.is-mobile .panel-chip span{font-size:9px}
 body.is-mobile .panel-chip strong{font-size:12px}
@@ -393,6 +394,21 @@ body.is-mobile .panel-mobile-nav-btn:disabled{opacity:.3}
 }
 .flash-watched   { animation: watchFlash .5s ease-out; }
 .flash-unwatched { animation: unwatchFlash .4s ease-out; }
+
+/* ===== DESKTOP ===== */
+body.is-desktop #headerCompact{display:none !important}
+body.is-desktop .mob-search-row{display:none !important}
+body.is-desktop .mob-views-row{display:none !important}
+body.is-desktop .panel-mobile-nav{display:none !important}
+body.is-desktop .panel-header-right{display:none !important}
+body.is-desktop .panel-main-header{display:block !important;padding:14px 44px 10px 14px !important;border-bottom:1px solid var(--border) !important}
+body.is-desktop .panel-stars-in-header{display:none !important}
+body.is-desktop .panel-chips-in-header{display:none !important}
+body.is-desktop .panel-main-header-desktop{display:block !important}
+/* ===== MOBILE ===== */
+body.is-mobile .panel-stars-row:not(.panel-stars-in-header){display:none !important}
+body.is-mobile #pChips{display:none !important}
+body.is-mobile .panel-main-header-desktop{display:none !important}
 </style>
 <script>
 (function(){
