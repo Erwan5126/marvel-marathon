@@ -163,29 +163,37 @@ body.is-mobile #mainControls.hidden{max-height:0;opacity:0;pointer-events:none}
 body.is-mobile .panel{padding:16px 12px;gap:0;align-items:center}
 body.is-mobile .panel-nav{display:none}
 body.is-mobile .panel-card{border-radius:16px;width:100%;max-width:100%;overflow:hidden}
-/* Layout horizontal compact : affiche petite à gauche */
-body.is-mobile .panel-layout{flex-direction:row;align-items:stretch}
-body.is-mobile #pPosterCol{width:90px !important;flex-shrink:0;aspect-ratio:2/3 !important;align-self:stretch;border-radius:16px 0 0 16px !important;background:#111;overflow:hidden}
-body.is-mobile #pPosterImg{width:90px;height:100%;object-fit:cover;object-position:center top}
-body.is-mobile .panel-main{flex:1;min-width:0;overflow:hidden}
-body.is-mobile .panel-main-header{padding:8px 36px 6px 10px}
-body.is-mobile .panel-badge{font-size:8px;padding:2px 5px}
-body.is-mobile .panel-title{font-size:12px !important;line-height:1.2}
-body.is-mobile .panel-meta{font-size:10px;margin-top:1px}
-body.is-mobile .panel-stars-row{padding:5px 10px 2px;gap:2px}
-body.is-mobile .pstar{font-size:16px}
+/* Layout mobile : colonne unique, header avec affiche à droite */
+body.is-mobile .panel-layout{flex-direction:column}
+body.is-mobile #pPosterCol{display:none !important}
+/* Header mobile : infos à gauche, affiche à droite */
+body.is-mobile .panel-main{width:100%}
+body.is-mobile .panel-main-header{
+  padding:12px 12px 10px 12px;
+  border-bottom:1px solid var(--border);
+  display:flex;gap:10px;align-items:flex-start
+}
+body.is-mobile .panel-header-left{flex:1;min-width:0}
+body.is-mobile .panel-header-right{width:90px;flex-shrink:0}
+body.is-mobile .panel-header-poster{width:90px;aspect-ratio:2/3;border-radius:8px;overflow:hidden;background:#111}
+body.is-mobile .panel-header-poster img{width:100%;height:100%;object-fit:cover;object-position:center top;display:block}
+body.is-mobile .panel-badge{font-size:9px;padding:2px 6px}
+body.is-mobile .panel-title{font-size:14px !important;line-height:1.2;margin-top:4px}
+body.is-mobile .panel-meta{font-size:11px;margin-top:2px;color:var(--muted)}
+body.is-mobile .panel-stars-row{padding:6px 12px 2px;gap:4px;border:none}
+body.is-mobile .pstar{font-size:18px}
 body.is-mobile #pChips .panel-chip:nth-child(1),
 body.is-mobile #pChips .panel-chip:nth-child(2),
 body.is-mobile #pChips .panel-chip:nth-child(4){display:none !important}
-body.is-mobile .panel-chips{display:flex;flex-wrap:wrap;gap:4px;padding:4px 10px}
-body.is-mobile .panel-chip{padding:3px 7px}
-body.is-mobile .panel-chip span{font-size:8px}
-body.is-mobile .panel-chip strong{font-size:10px}
-body.is-mobile .panel-note{margin:4px 10px;font-size:12px;min-height:32px}
-body.is-mobile .panel-actions{padding:5px 10px 6px;gap:5px}
-body.is-mobile .btn-watch{font-size:12px;padding:7px 10px;flex:1}
-body.is-mobile .panel-actions .btn-secondary{font-size:12px;padding:7px 9px}
-body.is-mobile .btn-close{top:5px !important;right:5px !important;width:26px;height:26px;font-size:11px}
+body.is-mobile .panel-chips{display:flex;flex-wrap:wrap;gap:6px;padding:4px 12px 6px}
+body.is-mobile .panel-chip{padding:4px 10px;border-radius:8px}
+body.is-mobile .panel-chip span{font-size:9px}
+body.is-mobile .panel-chip strong{font-size:12px}
+body.is-mobile .panel-note{margin:4px 12px 0;font-size:13px;min-height:40px}
+body.is-mobile .panel-actions{padding:8px 12px 8px;gap:6px}
+body.is-mobile .btn-watch{font-size:13px;padding:9px 12px;flex:1}
+body.is-mobile .panel-actions .btn-secondary{font-size:13px;padding:9px 11px}
+body.is-mobile .btn-close{top:8px !important;right:8px !important;width:28px;height:28px;font-size:12px}
 body.is-mobile .panel-mobile-nav{display:flex;gap:6px;padding:4px 10px 10px}
 body.is-mobile .panel-mobile-nav-btn{flex:1;padding:7px;border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:12px;font-family:'Barlow',sans-serif;touch-action:manipulation}
 body.is-mobile .panel-mobile-nav-btn:active{background:var(--bg2)}
@@ -1863,14 +1871,21 @@ body.is-mobile .panel-mobile-nav-btn:disabled{opacity:.3}
       </div>
       <!-- Contenu principal -->
       <div class="panel-main">
-        <!-- Header avec badges + titre -->
-        <div style="padding:14px 44px 10px 14px;border-bottom:1px solid var(--border)">
-          <div style="display:flex;gap:6px;margin-bottom:8px">
-            <span class="panel-badge" id="pBadgeStudio2" style="background: rgba(46, 204, 113, 0.3); color: rgb(123, 224, 160);">Marvel Television</span>
-            <span class="panel-badge" id="pBadgeType2" style="background:rgba(255,255,255,.1);color:#aaa">Série</span>
+        <!-- Header : infos à gauche, affiche à droite sur mobile -->
+        <div class="panel-main-header">
+          <div class="panel-header-left">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="panel-badge" id="pBadgeStudio2"></span>
+              <span class="panel-badge" id="pBadgeType2" style="background:rgba(255,255,255,.1);color:#aaa"></span>
+            </div>
+            <div class="panel-title" id="pTitle2" style="font-size:16px;line-height:1.25;margin-top:6px"></div>
+            <div class="panel-meta" id="pMeta2" style="margin-top:4px"></div>
           </div>
-          <div class="panel-title" id="pTitle2" style="font-size:16px;line-height:1.25">Agents of S.H.I.E.L.D. [02x01] Shadows</div>
-          <div class="panel-meta" id="pMeta2" style="margin-top:4px">23/09/2014</div>
+          <div class="panel-header-right">
+            <div class="panel-header-poster" id="pHeaderPoster">
+              <img id="pHeaderPosterImg" src="" alt="" style="display:none">
+            </div>
+          </div>
         </div>
         <!-- Body scrollable -->
         <div class="panel-body" style="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">
@@ -3190,6 +3205,20 @@ function updatePanel() {
     if (posterPlaceholder) {
       posterPlaceholder.style.display = '';
       posterPlaceholder.textContent = d.type === 'Série' || d.type === 'Web Série' ? '📺' : '🎬';
+    }
+  }
+  // Mini poster dans le header mobile
+  const headerPosterImg = document.getElementById('pHeaderPosterImg');
+  const headerPoster = document.getElementById('pHeaderPoster');
+  if (headerPosterImg) {
+    if (posterUrl) {
+      headerPosterImg.src = posterUrl;
+      headerPosterImg.style.display = 'block';
+      if (headerPoster) headerPoster.style.background = '#111';
+    } else {
+      headerPosterImg.src = '';
+      headerPosterImg.style.display = 'none';
+      if (headerPoster) headerPoster.style.background = studioBg[d.studio] || '#111';
     }
   }
 
