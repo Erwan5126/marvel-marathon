@@ -160,13 +160,13 @@ body.is-mobile .filters-panel{padding:8px 10px;border-top:1px solid var(--border
 body.is-mobile #mainControls{transition:max-height .25s ease,opacity .2s ease;overflow:hidden;max-height:200px;opacity:1}
 body.is-mobile #mainControls.hidden{max-height:0;opacity:0;pointer-events:none}
 
-body.is-mobile .panel{padding:0;gap:0;align-items:flex-end}
+body.is-mobile .panel{padding:20px 12px;gap:0;align-items:center}
 body.is-mobile .panel-nav{display:none}
-body.is-mobile .panel-card{border-radius:20px 20px 0 0;width:100%;max-width:100%;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
-/* Layout vertical : poster en haut, contenu en dessous */
+body.is-mobile .panel-card{border-radius:16px;width:100%;max-width:100%;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+/* Layout vertical : poster en haut ratio 2:3, contenu en dessous */
 body.is-mobile .panel-layout{flex-direction:column}
-body.is-mobile #pPosterCol{width:100% !important;height:220px;aspect-ratio:unset !important;border-radius:20px 20px 0 0 !important;align-self:auto;flex-shrink:0}
-body.is-mobile #pPosterImg{width:100%;height:220px;object-fit:cover;object-position:center 15%}
+body.is-mobile #pPosterCol{width:100% !important;aspect-ratio:2/3 !important;height:auto;overflow:hidden;border-radius:16px 16px 0 0 !important;align-self:auto;flex-shrink:0;background:#111}
+body.is-mobile #pPosterImg{width:100%;height:100%;object-fit:contain;object-position:center center}
 body.is-mobile .panel-main{width:100%}
 body.is-mobile .panel-main-header{padding:12px 44px 10px 14px;position:relative}
 body.is-mobile .panel-badge{font-size:9px;padding:2px 7px}
@@ -174,7 +174,10 @@ body.is-mobile .panel-title{font-size:15px !important;line-height:1.25;margin-to
 body.is-mobile .panel-meta{font-size:11px;margin-top:2px}
 body.is-mobile .panel-stars-row{padding:8px 14px 4px;gap:6px}
 body.is-mobile .pstar{font-size:22px}
-body.is-mobile .panel-chips{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 14px}
+body.is-mobile .panel-chips{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px}
+body.is-mobile #pChips .panel-chip:nth-child(1),
+body.is-mobile #pChips .panel-chip:nth-child(2),
+body.is-mobile #pChips .panel-chip:nth-child(4){display:none !important}
 body.is-mobile .panel-chip{padding:6px 10px;border-radius:8px}
 body.is-mobile .panel-chip span{font-size:9px}
 body.is-mobile .panel-chip strong{font-size:12px}
@@ -3507,12 +3510,17 @@ function deleteFromModal() {
 
 function navigatePanel(dir) {
   if (currentId === null) return;
-  const fd = getFilteredData();
-  const sorted = [...fd].sort((a,b) => (a.releaseDate||a.year+'') < (b.releaseDate||b.year+'') ? -1 : 1);
-  const idx = sorted.findIndex(d => idStr(d.id) === idStr(currentId));
+  // Chercher dans ALL data (pas juste filtré) pour ne pas bloquer la navigation
+  const allData = data.slice().sort((a,b) => (a.releaseDate||a.year+'') < (b.releaseDate||b.year+'') ? -1 : 1);
+  const idx = allData.findIndex(d => idStr(d.id) === idStr(currentId));
   if (idx === -1) return;
-  const next = sorted[idx + dir];
-  if (next) openPanel(next.id);
+  const next = allData[idx + dir];
+  if (next) {
+    openPanel(next.id);
+    // Remonter en haut de la fiche après navigation
+    const card = document.getElementById('panelCard');
+    if (card) card.scrollTop = 0;
+  }
 }
 
 function updatePanelNav() {
@@ -4237,15 +4245,23 @@ renderAll();
 // Swipe gauche/droite sur la fiche programme pour naviguer
 (function() {
   let touchStartX = 0;
+  let touchStartY = 0;
   document.addEventListener('touchstart', function(e) {
     const card = e.target.closest('.panel-card');
-    if (card) touchStartX = e.touches[0].clientX;
+    if (card) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
+    // Ne pas intercepter les taps sur les boutons
+    if (e.target.closest('button') || e.target.closest('textarea') || e.target.closest('input')) return;
     const card = e.target.closest('.panel-card');
     if (!card) return;
     const dx = e.changedTouches[0].clientX - touchStartX;
-    if (Math.abs(dx) > 60) {
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    // Swipe horizontal seulement (pas vertical = scroll)
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5) {
       navigatePanel(dx < 0 ? 1 : -1);
     }
   }, {passive: true});
@@ -4259,10 +4275,10 @@ renderAll();
     const controls = document.getElementById('mainControls');
     const scroll = window.scrollY;
     const isMobile = document.body.classList.contains('is-mobile');
-    if (scroll > 80 && scroll > lastScroll) {
+    if (scroll > 150 && scroll > lastScroll + 30) {
       if (headerFull) headerFull.classList.add('hidden');
       if (isMobile && controls) controls.classList.add('hidden');
-    } else if (scroll < lastScroll - 20) {
+    } else if (scroll < lastScroll - 40) {
       if (headerFull) headerFull.classList.remove('hidden');
       if (controls) controls.classList.remove('hidden');
     }
