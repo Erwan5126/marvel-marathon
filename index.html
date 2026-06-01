@@ -346,9 +346,24 @@ a{color:inherit;text-decoration:none}
 </script></head>
 <body style="">
 
+<script>
+// Détection mobile/desktop au chargement — basé sur userAgent ET largeur écran
+(function() {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 600;
+  document.body.classList.add(isMobile ? 'is-mobile' : 'is-desktop');
+  // Re-évaluer si redimensionnement (desktop uniquement)
+  if (!isMobile) {
+    window.addEventListener('resize', function() {
+      const nowMobile = window.innerWidth < 600;
+      document.body.classList.toggle('is-mobile', nowMobile);
+      document.body.classList.toggle('is-desktop', !nowMobile);
+    });
+  }
+})();
+</script>
 <div class="header" id="mainHeader">
   <!-- Ligne compacte toujours visible -->
-  <div class="header-compact">
+  <div class="header-compact" id="headerCompact">
     <div class="logo-small">⬡ Marvel Marathon</div>
     <div class="header-compact-stats">
       <span id="sWatchedCompact">226</span>/<span id="sTotalCompact">726</span>
