@@ -2933,7 +2933,10 @@ function renderMosaic(fd) {
     }
 
     const watchedClass = allW ? ' watched' : (partW ? ' partial' : '');
-    return `<div class="mosaic-item${watchedClass}" data-eid="${eid}" onclick="handleCardEl(event,this)" title="${displayTitle}">
+    // Si partiellement vu, ouvrir le premier épisode non vu du groupe
+    const firstUnwatchedEp = partW ? eps.find(e => !watched[idStr(e.id)]) : null;
+    const targetEid = firstUnwatchedEp ? encodeURIComponent(String(firstUnwatchedEp.id)) : eid;
+    return `<div class="mosaic-item${watchedClass}" data-eid="${targetEid}" onclick="handleCardEl(event,this)" title="${displayTitle}">
       ${imgOrPlaceholder}${check}${epBadge}
     </div>`;
   }).join('') + '</div>';
