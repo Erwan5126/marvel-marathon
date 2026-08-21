@@ -51,6 +51,8 @@ button{font-family:inherit}
 .sub{font-size:11px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-top:2px}
 .admin-btn{position:absolute;top:calc(1rem + env(safe-area-inset-top));right:1rem;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:10px;padding:5px 10px;border-radius:12px;cursor:pointer;letter-spacing:.5px}
 .admin-btn.active{border-color:var(--gold);color:var(--gold)}
+.reset-btn{position:absolute;top:calc(1rem + env(safe-area-inset-top));left:1rem;background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:10px;padding:5px 10px;border-radius:12px;cursor:pointer;letter-spacing:.5px}
+.reset-btn:hover{border-color:var(--red);color:var(--red)}
 
 .stats-bar{display:flex;justify-content:center;gap:2rem;margin:12px 0 0;flex-wrap:wrap}
 .stat{text-align:center}
@@ -177,6 +179,7 @@ button{font-family:inherit}
 <body>
 
 <div class="header">
+  <button class="reset-btn" onclick="resetMarathon()">↺ Réinitialiser</button>
   <button class="admin-btn" id="adminBtn" onclick="openLogin()">Visiteur</button>
   <div class="logo">⬡ Marvel Marathon</div>
   <div class="sub">Tracker complet · Tous univers</div>
@@ -466,6 +469,46 @@ function setRatingFor(catalogId, val){
   progressRef(catalogId).set({ rating: val }, { merge:true });
 }
 
+// ── Marquer tout un studio comme vu (épisode par épisode pour les séries) ──
+function setProgramWatched(d, value){
+  const cur = progress[d.id] || {};
+  const update = { watched: value, watchDate: value ? (cur.watchDate || new Date().toISOString().slice(0,10)) : null };
+  if (d.type === 'Série' && d.episodes){
+    const watchedEpisodes = {};
+    for (let i = 1; i <= d.episodes; i++) watchedEpisodes[i] = value;
+    update.watchedEpisodes = watchedEpisodes;
+  }
+  return progressRef(d.id).set(update, { merge:true });
+}
+
+function markStudioWatched(studio, value){
+  const items = catalog.filter(d => d.studio === studio && (currentScope !== 'mine' || isIncluded(d.id)));
+  if (items.length === 0) return;
+  if (!confirm(`Marquer les ${items.length} programme(s) de "${studio}" comme vus ?`)) return;
+  Promise.all(items.map(d => setProgramWatched(d, value))).catch(err => alert('Erreur : ' + err.message));
+}
+
+// ── Réinitialiser tout le marathon perso (garde la sélection et les notes) ──
+async function resetMarathon(){
+  if (!auth.currentUser) return;
+  if (!confirm('Remettre tous tes programmes en "non vu" pour repartir de zéro ?\n\nTa sélection de marathon et tes notes seront conservées.')) return;
+  const uid = auth.currentUser.uid;
+  try {
+    const snap = await db.collection('progress').doc(uid).collection('items').get();
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400){
+      const batch = db.batch();
+      docs.slice(i, i+400).forEach(doc => {
+        batch.set(doc.ref, { watched:false, watchDate:null, watchedEpisodes:{} }, { merge:true });
+      });
+      await batch.commit();
+    }
+    alert('Marathon réinitialisé !');
+  } catch(err){
+    alert('Erreur : ' + err.message);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // TMDB — recherche pour l'ajout (admin only côté UI, la vraie
 // protection est la règle Firestore côté serveur)
@@ -715,6 +758,9 @@ function render(){
             <div class="studio-dot" style="background:${studioColor(studio)}"></div>
             <div class="studio-name">${studio}</div>
             <div class="studio-prog">${seen}/${items.length} · ${pct}%</div>
+            <div class="studio-actions" onclick="event.stopPropagation()">
+              <button class="studio-mini-btn" onclick='markStudioWatched("${studio}", true)'>Tout marquer vu</button>
+            </div>
           </div>
           <div class="studio-bar"><div class="studio-bar-fill" style="width:${pct}%;background:${studioColor(studio)}"></div></div>
           ${collapsed[studio] ? '' : `<div class="grid">${items.map(cardItem).join('')}</div>`}
@@ -865,6 +911,15 @@ function updateDetailNavButtons(){
     }
   }, { passive:true });
 })();
+
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('detailOverlay').classList.contains('open')) return;
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); detailNav(-1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); detailNav(1); }
+  else if (e.key === 'Escape') { closeOverlay('detailOverlay'); }
+});
 
 function renderEpisodeChecklist(catalogId, episodes){
   const p = progress[catalogId] || {};
