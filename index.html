@@ -138,12 +138,31 @@ button{font-family:inherit}
 .studio-mini-btn{font-size:9px;padding:2px 7px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
 .studio-mini-btn:hover{border-color:var(--gold);color:var(--gold)}
 
-.detail-poster{width:100%;max-height:280px;object-fit:cover;border-radius:10px;margin-bottom:14px;background:#333}
-.detail-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px;margin-bottom:4px}
-.detail-meta{font-size:12px;color:var(--muted);margin-bottom:10px}
-.detail-overview{font-size:13px;line-height:1.5;color:#ccc;margin-bottom:14px}
-.detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.detail-actions .btn{flex:none;padding:8px 16px}
+.detail-poster-wrap{position:relative;margin:0;border-radius:14px 14px 0 0;overflow:hidden}
+.detail-poster{width:100%;max-height:320px;object-fit:cover;display:block;background:#333}
+.detail-poster-scrim{position:absolute;inset:0;background:linear-gradient(to bottom, transparent 40%, var(--bg2) 100%)}
+.detail-body{padding:14px 1.5rem 1.5rem}
+.detail-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.detail-badge{font-size:10px;padding:3px 9px;border-radius:10px;font-weight:600;letter-spacing:.3px}
+.detail-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:1px;margin-bottom:8px;line-height:1.05}
+.detail-overview{font-size:13px;line-height:1.6;color:#ccc;margin-bottom:16px}
+.detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.detail-actions .btn{flex:none;padding:9px 16px}
+.detail-rating-row{display:flex;align-items:center;gap:10px;padding-top:6px;border-top:1px solid var(--border)}
+.detail-rating-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+
+.ep-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px}
+.ep-header-count{font-size:12px;color:var(--gold);font-weight:600}
+.ep-actions{display:flex;gap:6px}
+.ep-progress-wrap{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-bottom:12px}
+.ep-progress-fill{height:100%;background:linear-gradient(90deg,var(--red),var(--gold));border-radius:2px}
+.ep-list{max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px}
+.ep-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border);cursor:pointer}
+.ep-row:last-child{border-bottom:none}
+.ep-row:hover{background:var(--bg3)}
+.ep-row input[type=checkbox]{width:16px;height:16px;flex-shrink:0;accent-color:var(--gold);cursor:pointer}
+.ep-num{font-size:10px;color:var(--muted);flex-shrink:0;width:26px}
+.ep-title{font-size:12px;flex:1}
 .close-x{position:absolute;top:10px;right:14px;font-size:22px;color:var(--muted);cursor:pointer;background:none;border:none}
 
 @media (min-width:700px){
@@ -233,18 +252,29 @@ button{font-family:inherit}
 
 <!-- Fiche programme -->
 <div class="overlay" id="detailOverlay">
-  <div class="modal" style="position:relative">
-    <button class="close-x" onclick="closeOverlay('detailOverlay')">✕</button>
-    <img class="detail-poster" id="detailPoster">
-    <div class="detail-title" id="detailTitle"></div>
-    <div class="detail-meta" id="detailMeta"></div>
-    <div class="detail-overview" id="detailOverview"></div>
-    <div class="detail-actions">
-      <button class="btn btn-primary" id="detailWatchBtn" onclick="toggleWatched()"></button>
-      <button class="btn btn-secondary" id="detailAdminEdit" style="display:none" onclick="openEdit()">Modifier</button>
-      <button class="btn btn-secondary" id="detailAdminDelete" style="display:none" onclick="deleteCurrentItem()">Supprimer</button>
+  <div class="modal" style="position:relative;padding:0">
+    <button class="close-x" onclick="closeOverlay('detailOverlay')" style="z-index:2">✕</button>
+    <div class="detail-poster-wrap">
+      <img class="detail-poster" id="detailPoster">
+      <div class="detail-poster-scrim"></div>
     </div>
-    <div class="card-stars" id="detailStars" style="font-size:20px;gap:4px"></div>
+    <div class="detail-body">
+      <div class="detail-badges" id="detailBadges"></div>
+      <div class="detail-title" id="detailTitle"></div>
+
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="detailWatchBtn" onclick="toggleWatched()"></button>
+        <button class="btn btn-secondary" id="detailAdminEdit" style="display:none" onclick="openEdit()">Modifier</button>
+        <button class="btn btn-secondary" id="detailAdminDelete" style="display:none" onclick="deleteCurrentItem()">Supprimer</button>
+      </div>
+
+      <div id="detailEpisodes" style="display:none"></div>
+
+      <div class="detail-rating-row">
+        <span class="detail-rating-label">Ma note</span>
+        <div class="card-stars" id="detailStars" style="font-size:19px;gap:4px"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -413,6 +443,7 @@ function listenProgress(uid){
     progress = {};
     snap.docs.forEach(d => progress[d.id] = d.data());
     render();
+    refreshDetailIfOpen();
   });
 }
 
@@ -741,26 +772,127 @@ function updateStats(){
 // ═══════════════════════════════════════════════════════════════
 // FICHE DÉTAIL
 // ═══════════════════════════════════════════════════════════════
-function openDetail(id){
+let lastEpisodesCache = null; // {catalogId, episodes}
+
+async function openDetail(id){
   const d = catalog.find(x => x.id === id);
   if (!d) return;
   currentDetailId = id;
+  lastEpisodesCache = null;
   const p = progress[id] || {};
+
   document.getElementById('detailPoster').src = d.poster || '';
   document.getElementById('detailTitle').textContent = d.title;
-  document.getElementById('detailMeta').textContent = `${d.studio} · ${d.type} · ${d.year||''} ${d.duration?'· '+fmtDuration(d.duration,d.episodes):''}`;
-  document.getElementById('detailOverview').textContent = d.overview || '';
-  const wBtn = document.getElementById('detailWatchBtn');
-  wBtn.textContent = p.watched ? '✓ Vu' : 'Marquer comme vu';
-  document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${id}',${n});openDetail('${id}')">★</span>`).join('');
+  document.getElementById('detailBadges').innerHTML = `
+    <span class="detail-badge" style="background:${studioColor(d.studio)}33;color:${studioColor(d.studio)}">${d.studio}</span>
+    <span class="detail-badge" style="background:var(--bg3);color:var(--muted)">${d.type}</span>
+    <span class="detail-badge" style="background:var(--bg3);color:var(--muted)">${d.year||''}${d.duration?' · '+fmtDuration(d.duration,d.episodes):''}</span>`;
+  document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${id}',${n});refreshDetailRating()">★</span>`).join('');
   document.getElementById('detailAdminDelete').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminEdit').style.display = isAdmin ? 'inline-block' : 'none';
-  document.getElementById('detailOverlay').classList.add('open');
+
+  const wBtn = document.getElementById('detailWatchBtn');
+  const epBox = document.getElementById('detailEpisodes');
+  const isSeries = d.type === 'Série' && d.tmdbId && d.tmdbSeason;
+
+  if (isSeries){
+    wBtn.style.display = 'none';
+    epBox.style.display = 'block';
+    epBox.innerHTML = '<div class="empty-msg" style="padding:1.5rem 0">Chargement des épisodes…</div>';
+    document.getElementById('detailOverlay').classList.add('open');
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/tv/${d.tmdbId}/season/${d.tmdbSeason}?api_key=${TMDB_API_KEY}&language=fr-FR`);
+      const season = await res.json();
+      const episodes = season.episodes || [];
+      lastEpisodesCache = { catalogId: id, episodes };
+      renderEpisodeChecklist(id, episodes);
+    } catch(e){
+      epBox.innerHTML = '<div class="empty-msg" style="padding:1.5rem 0">Impossible de charger les épisodes.</div>';
+    }
+  } else {
+    epBox.style.display = 'none';
+    wBtn.style.display = 'inline-block';
+    wBtn.textContent = p.watched ? '✓ Vu' : 'Marquer comme vu';
+    document.getElementById('detailOverlay').classList.add('open');
+  }
 }
+
+function refreshDetailRating(){
+  if (!currentDetailId) return;
+  const p = progress[currentDetailId] || {};
+  document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${currentDetailId}',${n});refreshDetailRating()">★</span>`).join('');
+}
+
+function renderEpisodeChecklist(catalogId, episodes){
+  const p = progress[catalogId] || {};
+  const watchedMap = p.watchedEpisodes || {};
+  const total = episodes.length;
+  const done = episodes.filter(e => watchedMap[e.episode_number]).length;
+  const pct = total ? Math.round(done/total*100) : 0;
+  const epNums = episodes.map(e => e.episode_number);
+  document.getElementById('detailEpisodes').innerHTML = `
+    <div class="ep-header">
+      <span class="ep-header-count">${done}/${total} épisodes vus</span>
+      <div class="ep-actions">
+        <button class="studio-mini-btn" onclick='toggleAllEpisodes("${catalogId}", ${JSON.stringify(epNums)}, true)'>Tout cocher</button>
+        <button class="studio-mini-btn" onclick='toggleAllEpisodes("${catalogId}", ${JSON.stringify(epNums)}, false)'>Tout décocher</button>
+      </div>
+    </div>
+    <div class="ep-progress-wrap"><div class="ep-progress-fill" style="width:${pct}%"></div></div>
+    <div class="ep-list">
+      ${episodes.map(e => `
+        <label class="ep-row">
+          <input type="checkbox" ${watchedMap[e.episode_number]?'checked':''} onchange="toggleEpisodeFor('${catalogId}', ${e.episode_number}, ${total})">
+          <span class="ep-num">E${e.episode_number}</span>
+          <span class="ep-title">${(e.name||'').replace(/</g,'&lt;')}</span>
+        </label>`).join('')}
+    </div>`;
+}
+
+function toggleEpisodeFor(catalogId, epNum, total){
+  const cur = progress[catalogId] || {};
+  const watchedEpisodes = { ...(cur.watchedEpisodes||{}) };
+  watchedEpisodes[epNum] = !watchedEpisodes[epNum];
+  const done = Object.values(watchedEpisodes).filter(Boolean).length;
+  progressRef(catalogId).set({
+    watchedEpisodes,
+    watched: done >= total,
+    watchDate: done >= total ? (cur.watchDate || new Date().toISOString().slice(0,10)) : (cur.watchDate || null)
+  }, { merge:true }).catch(err => alert('Erreur : ' + err.message));
+}
+
+function toggleAllEpisodes(catalogId, epNums, value){
+  const cur = progress[catalogId] || {};
+  const watchedEpisodes = { ...(cur.watchedEpisodes||{}) };
+  epNums.forEach(n => watchedEpisodes[n] = value);
+  const total = epNums.length;
+  const done = Object.values(watchedEpisodes).filter(Boolean).length;
+  progressRef(catalogId).set({
+    watchedEpisodes,
+    watched: done >= total,
+    watchDate: value ? (cur.watchDate || new Date().toISOString().slice(0,10)) : (cur.watchDate || null)
+  }, { merge:true }).catch(err => alert('Erreur : ' + err.message));
+}
+
+function refreshDetailIfOpen(){
+  if (!document.getElementById('detailOverlay').classList.contains('open')) return;
+  if (!currentDetailId) return;
+  const d = catalog.find(x => x.id === currentDetailId);
+  if (!d) return;
+  const p = progress[currentDetailId] || {};
+  if (lastEpisodesCache && lastEpisodesCache.catalogId === currentDetailId){
+    renderEpisodeChecklist(currentDetailId, lastEpisodesCache.episodes);
+  } else if (document.getElementById('detailWatchBtn').style.display !== 'none') {
+    document.getElementById('detailWatchBtn').textContent = p.watched ? '✓ Vu' : 'Marquer comme vu';
+  }
+  refreshDetailRating();
+}
+
 function toggleWatched(){
   if (!currentDetailId) return;
   toggleWatchedFor(currentDetailId);
-  openDetail(currentDetailId);
+  const p = progress[currentDetailId] || {};
+  document.getElementById('detailWatchBtn').textContent = !p.watched ? '✓ Vu' : 'Marquer comme vu';
 }
 
 render();
