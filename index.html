@@ -131,6 +131,12 @@ button{font-family:inherit}
 .studiomgr-row input[type=text]{flex:1;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px}
 .studiomgr-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px 6px}
 .studiomgr-del:hover{color:var(--red)}
+.scope-toggle{display:flex;gap:4px}
+.studio-actions{display:flex;gap:6px}
+.manage-card{padding-left:40px}
+.manage-checkbox{position:absolute;top:14px;left:12px;width:18px;height:18px;cursor:pointer;accent-color:var(--gold)}
+.studio-mini-btn{font-size:9px;padding:2px 7px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
+.studio-mini-btn:hover{border-color:var(--gold);color:var(--gold)}
 
 .detail-poster{width:100%;max-height:280px;object-fit:cover;border-radius:10px;margin-bottom:14px;background:#333}
 .detail-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:1px;margin-bottom:4px}
@@ -162,6 +168,10 @@ button{font-family:inherit}
 <div class="controls">
   <input type="text" class="search" id="searchInput" placeholder="Rechercher..." oninput="render()">
   <div class="filters" id="typeFilters"></div>
+  <div class="scope-toggle">
+    <button class="vtbtn on" id="scopeMineBtn" onclick="setScope('mine')">Mon marathon</button>
+    <button class="vtbtn" id="scopeAllBtn" onclick="setScope('manage')">Gestion marathon</button>
+  </div>
   <button class="add-btn" id="addBtn" style="display:none" onclick="openAddSearch()">+ Ajouter</button>
   <button class="add-btn" id="studioMgrBtn" style="display:none" onclick="openStudioMgr()">⚙ Studios</button>
   <div class="view-toggle">
@@ -589,18 +599,40 @@ function filteredData(){
   return catalog.filter(d => {
     if (activeType && d.type !== activeType) return false;
     if (q && !d.title.toLowerCase().includes(q)) return false;
+    if (currentScope === 'mine' && !isIncluded(d.id)) return false;
     return true;
   });
 }
-
 // ═══════════════════════════════════════════════════════════════
 // RENDER
 // ═══════════════════════════════════════════════════════════════
 function setView(v, btn){
   currentView = v;
-  document.querySelectorAll('.vtbtn').forEach(b=>b.classList.remove('on'));
+  document.querySelectorAll('.view-toggle .vtbtn').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
   render();
+}
+
+let currentScope = 'mine'; // 'mine' = marathon perso, 'manage' = gestion de la sélection
+function setScope(s){
+  currentScope = s;
+  document.getElementById('scopeMineBtn').classList.toggle('on', s==='mine');
+  document.getElementById('scopeAllBtn').classList.toggle('on', s==='manage');
+  render();
+}
+
+function isIncluded(id){
+  const v = progress[id]?.included;
+  return v === undefined ? true : v; // inclus par défaut
+}
+function toggleIncludedFor(id){
+  const cur = progress[id] || {};
+  progressRef(id).set({ included: !isIncluded(id) }, { merge:true });
+}
+function setStudioIncluded(studio, value){
+  const items = catalog.filter(d => d.studio === studio);
+  const batchPromises = items.map(d => progressRef(d.id).set({ included: value }, { merge:true }));
+  Promise.all(batchPromises).catch(err => console.error(err));
 }
 
 function studioColor(s){ return (STUDIOS[s]||{color:'#888'}).color; }
@@ -610,10 +642,29 @@ function render(){
   const list = filteredData();
   const main = document.getElementById('main');
   if (list.length === 0){
-    main.innerHTML = `<div class="empty-msg">${catalog.length===0 ? "Le catalogue est vide pour l'instant." : "Aucun résultat."}</div>`;
+    main.innerHTML = `<div class="empty-msg">${catalog.length===0 ? "Le catalogue est vide pour l'instant." : (currentScope==='mine' ? "Ton marathon est vide — passe dans l'onglet \"Gestion marathon\" pour sélectionner des programmes." : "Aucun résultat.")}</div>`;
     return;
   }
-  if (currentView === 'mosaic'){
+  if (currentScope === 'manage'){
+    const byStudio = {};
+    list.forEach(d => { (byStudio[d.studio] = byStudio[d.studio]||[]).push(d); });
+    main.innerHTML = Object.entries(byStudio).map(([studio, items]) => {
+      const incCount = items.filter(d => isIncluded(d.id)).length;
+      return `
+        <div class="studio-section">
+          <div class="studio-header" onclick="toggleCollapse('${studio}')">
+            <div class="studio-dot" style="background:${studioColor(studio)}"></div>
+            <div class="studio-name">${studio}</div>
+            <div class="studio-prog">${incCount}/${items.length} sélectionnés</div>
+            <div class="studio-actions" onclick="event.stopPropagation()">
+              <button class="studio-mini-btn" onclick="setStudioIncluded('${studio}', true)">Tout inclure</button>
+              <button class="studio-mini-btn" onclick="setStudioIncluded('${studio}', false)">Tout exclure</button>
+            </div>
+          </div>
+          ${collapsed[studio] ? '' : `<div class="grid">${items.map(cardManage).join('')}</div>`}
+        </div>`;
+    }).join('');
+  } else if (currentView === 'mosaic'){
     main.innerHTML = `<div class="mosaic-grid">${list.map(cardMosaic).join('')}</div>`;
   } else {
     const byStudio = {};
@@ -659,6 +710,17 @@ function cardMosaic(d){
     </div>`;
 }
 
+function cardManage(d){
+  const inc = isIncluded(d.id);
+  return `
+    <div class="card manage-card" onclick="toggleIncludedFor('${d.id}')">
+      <input type="checkbox" class="manage-checkbox" ${inc?'checked':''} onclick="event.stopPropagation();toggleIncludedFor('${d.id}')">
+      <div class="card-studio">${d.type}</div>
+      <div class="card-title" style="padding-right:0">${d.title}</div>
+      <div class="card-meta">${d.year || ''} ${d.duration ? '· '+fmtDuration(d.duration, d.episodes) : ''}</div>
+    </div>`;
+}
+
 function fmtDuration(min, episodes){
   if (episodes) return `${episodes} ép.`;
   const h = Math.floor(min/60), m = min%60;
@@ -666,8 +728,9 @@ function fmtDuration(min, episodes){
 }
 
 function updateStats(){
-  const total = catalog.length;
-  const seen = catalog.filter(d => progress[d.id]?.watched).length;
+  const mine = catalog.filter(d => isIncluded(d.id));
+  const total = mine.length;
+  const seen = mine.filter(d => progress[d.id]?.watched).length;
   document.getElementById('statSeen').textContent = seen;
   document.getElementById('statTotal').textContent = total;
   const pct = total ? Math.round(seen/total*100) : 0;
