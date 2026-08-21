@@ -164,6 +164,10 @@ button{font-family:inherit}
 .ep-num{font-size:10px;color:var(--muted);flex-shrink:0;width:26px}
 .ep-title{font-size:12px;flex:1}
 .close-x{position:absolute;top:10px;right:10px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;cursor:pointer;background:rgba(0,0,0,.5);border:none;border-radius:50%}
+.detail-nav{position:absolute;top:50%;transform:translateY(-50%);width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.5);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer;border:none;z-index:2}
+.detail-nav:disabled{opacity:.25;cursor:default}
+.detail-nav.prev{left:10px}
+.detail-nav.next{right:10px}
 
 @media (min-width:700px){
   .controls{top:96px}
@@ -252,8 +256,10 @@ button{font-family:inherit}
 
 <!-- Fiche programme -->
 <div class="overlay" id="detailOverlay">
-  <div class="modal" style="position:relative;padding:0">
+  <div class="modal" id="detailModal" style="position:relative;padding:0">
     <button class="close-x" onclick="closeOverlay('detailOverlay')" style="z-index:2">✕</button>
+    <button class="detail-nav prev" id="detailPrevBtn" onclick="detailNav(-1)">‹</button>
+    <button class="detail-nav next" id="detailNextBtn" onclick="detailNav(1)">›</button>
     <div class="detail-poster-wrap">
       <img class="detail-poster" id="detailPoster">
       <div class="detail-poster-scrim"></div>
@@ -790,6 +796,7 @@ async function openDetail(id){
   document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${id}',${n});refreshDetailRating()">★</span>`).join('');
   document.getElementById('detailAdminDelete').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminEdit').style.display = isAdmin ? 'inline-block' : 'none';
+  updateDetailNavButtons();
 
   const wBtn = document.getElementById('detailWatchBtn');
   const epBox = document.getElementById('detailEpisodes');
@@ -822,6 +829,42 @@ function refreshDetailRating(){
   const p = progress[currentDetailId] || {};
   document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${currentDetailId}',${n});refreshDetailRating()">★</span>`).join('');
 }
+
+// ── Navigation swipe / flèches entre fiches (respecte les filtres/vue en cours) ──
+function detailNav(dir){
+  const list = filteredData();
+  const idx = list.findIndex(d => d.id === currentDetailId);
+  if (idx === -1) return;
+  const nextIdx = idx + dir;
+  if (nextIdx < 0 || nextIdx >= list.length) return;
+  openDetail(list[nextIdx].id);
+}
+
+function updateDetailNavButtons(){
+  const list = filteredData();
+  const idx = list.findIndex(d => d.id === currentDetailId);
+  document.getElementById('detailPrevBtn').disabled = idx <= 0;
+  document.getElementById('detailNextBtn').disabled = idx === -1 || idx >= list.length - 1;
+}
+
+(function initDetailSwipe(){
+  const modal = document.getElementById('detailModal');
+  let startX = 0, startY = 0, tracking = false;
+  modal.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive:true });
+  modal.addEventListener('touchend', e => {
+    if (!tracking) return;
+    tracking = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5){
+      detailNav(dx < 0 ? 1 : -1);
+    }
+  }, { passive:true });
+})();
 
 function renderEpisodeChecklist(catalogId, episodes){
   const p = progress[catalogId] || {};
@@ -886,6 +929,7 @@ function refreshDetailIfOpen(){
     document.getElementById('detailWatchBtn').textContent = p.watched ? '✓ Vu' : 'Marquer comme vu';
   }
   refreshDetailRating();
+  updateDetailNavButtons();
 }
 
 function toggleWatched(){
