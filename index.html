@@ -5,6 +5,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Marvel Marathon">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#111111">
 <title>Marvel Marathon</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
@@ -691,6 +694,17 @@ function setView(v, btn){
   document.querySelectorAll('.view-toggle .vtbtn').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
   render();
+  if (v === 'mosaic') scrollToFirstUnwatched();
+}
+
+function scrollToFirstUnwatched(){
+  const list = filteredData();
+  const idx = list.findIndex(d => !progress[d.id]?.watched);
+  if (idx === -1) return;
+  requestAnimationFrame(() => {
+    const items = document.querySelectorAll('#main .mosaic-item');
+    if (items[idx]) items[idx].scrollIntoView({ behavior:'smooth', block:'center' });
+  });
 }
 
 let currentScope = 'mine'; // 'mine' = marathon perso, 'manage' = gestion de la sélection
