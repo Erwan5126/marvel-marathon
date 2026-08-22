@@ -140,6 +140,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   </div>
   <div class="admin-tools" id="adminTools" style="display:none">
     <button class="mini-btn" onclick="openUniverseMgr()">⚙ Univers</button>
+    <button class="mini-btn" onclick="openBulkAssignPicker()">📌 Affecter des programmes</button>
     <button class="mini-btn" onclick="openLinkMgr()">🔗 Liens</button>
   </div>
 </div>
@@ -213,10 +214,11 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   </div>
 </div>
 
-<!-- Assignation en masse (clic sur un univers) -->
+<!-- Assignation en masse -->
 <div class="overlay" id="bulkAssignOverlay">
   <div class="modal">
-    <div class="modal-title" id="bulkAssignTitle">Ajouter des programmes</div>
+    <div class="modal-title">Affecter des programmes</div>
+    <div class="field"><label>Univers cible</label><select id="bulkUniverseSelect" onchange="onBulkUniverseChange()"></select></div>
     <input type="text" class="bulk-search" id="bulkSearch" placeholder="Rechercher..." oninput="renderBulkList()">
     <div class="bulk-actions">
       <button class="bulk-mini-btn" onclick="bulkCheckAll(true)">Tout cocher</button>
@@ -361,10 +363,9 @@ function renderBoard(){
     trunk.sort(sortFn);
     return `
       <div class="uni-col" data-uni="${u.id}">
-        <div class="uni-head" style="border-color:${u.color}${isAdmin?';cursor:pointer' : ''}" ${isAdmin?`onclick='openBulkAssign("${u.id}")'`:''}>
+        <div class="uni-head" style="border-color:${u.color}">
           <div class="uni-dot" style="background:${u.color}"></div>
           <div class="uni-name">${u.name}</div>
-          ${isAdmin ? '<span style="font-size:10px;color:var(--gold);margin-left:auto">+ Ajouter</span>' : ''}
         </div>
         <div class="uni-trunk">${trunk.map(cardHtml).join('')}</div>
         ${branchNames.length ? `<div class="uni-branches">
@@ -515,15 +516,18 @@ function openAssignFromDetail(){
   openAssign(currentDetailId);
 }
 
-// ── Assignation en masse (clic sur l'en-tête d'un univers) ──
+// ── Assignation en masse (bouton "📌 Affecter des programmes") ──
 let bulkUniverseId = null;
-function openBulkAssign(uniId){
-  bulkUniverseId = uniId;
-  const u = universes.find(x => x.id === uniId);
-  document.getElementById('bulkAssignTitle').textContent = `Ajouter à "${u ? u.name : ''}"`;
+function openBulkAssignPicker(){
+  const select = document.getElementById('bulkUniverseSelect');
+  select.innerHTML = universes.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+  bulkUniverseId = universes.length ? universes[0].id : null;
   document.getElementById('bulkSearch').value = '';
   renderBulkList();
   document.getElementById('bulkAssignOverlay').classList.add('open');
+}
+function onBulkUniverseChange(){
+  bulkUniverseId = document.getElementById('bulkUniverseSelect').value;
 }
 function renderBulkList(){
   const q = document.getElementById('bulkSearch').value.toLowerCase();
