@@ -104,6 +104,13 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .link-row .link-txt{flex:1}
 .link-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
 .link-del:hover{color:var(--red)}
+.bulk-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--border);font-size:12px}
+.bulk-row:last-child{border-bottom:none}
+.bulk-row input[type=checkbox]{width:16px;height:16px;flex-shrink:0;accent-color:var(--gold);cursor:pointer}
+.bulk-list{max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:0 8px;margin-top:8px}
+.bulk-search{width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;margin-bottom:8px}
+.bulk-actions{display:flex;gap:6px;margin-bottom:4px}
+.bulk-mini-btn{font-size:10px;padding:3px 9px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
 
 .detail-poster{width:100%;max-height:280px;object-fit:cover;border-radius:10px;margin-bottom:12px;background:#333}
 .detail-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;margin-bottom:6px}
@@ -202,6 +209,23 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div style="margin-top:16px">
       <label style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Liens existants</label>
       <div id="linkList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Assignation en masse (clic sur un univers) -->
+<div class="overlay" id="bulkAssignOverlay">
+  <div class="modal">
+    <div class="modal-title" id="bulkAssignTitle">Ajouter des programmes</div>
+    <input type="text" class="bulk-search" id="bulkSearch" placeholder="Rechercher..." oninput="renderBulkList()">
+    <div class="bulk-actions">
+      <button class="bulk-mini-btn" onclick="bulkCheckAll(true)">Tout cocher</button>
+      <button class="bulk-mini-btn" onclick="bulkCheckAll(false)">Tout décocher</button>
+    </div>
+    <div class="bulk-list" id="bulkList"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeOverlay('bulkAssignOverlay')">Fermer</button>
+      <button class="btn btn-primary" onclick="confirmBulkAssign()">Ajouter la sélection</button>
     </div>
   </div>
 </div>
@@ -337,9 +361,10 @@ function renderBoard(){
     trunk.sort(sortFn);
     return `
       <div class="uni-col" data-uni="${u.id}">
-        <div class="uni-head" style="border-color:${u.color}">
+        <div class="uni-head" style="border-color:${u.color}${isAdmin?';cursor:pointer' : ''}" ${isAdmin?`onclick='openBulkAssign("${u.id}")'`:''}>
           <div class="uni-dot" style="background:${u.color}"></div>
           <div class="uni-name">${u.name}</div>
+          ${isAdmin ? '<span style="font-size:10px;color:var(--gold);margin-left:auto">+ Ajouter</span>' : ''}
         </div>
         <div class="uni-trunk">${trunk.map(cardHtml).join('')}</div>
         ${branchNames.length ? `<div class="uni-branches">
@@ -488,6 +513,43 @@ function openAssignFromDetail(){
   if (!currentDetailId) return;
   closeOverlay('detailOverlay');
   openAssign(currentDetailId);
+}
+
+// ── Assignation en masse (clic sur l'en-tête d'un univers) ──
+let bulkUniverseId = null;
+function openBulkAssign(uniId){
+  bulkUniverseId = uniId;
+  const u = universes.find(x => x.id === uniId);
+  document.getElementById('bulkAssignTitle').textContent = `Ajouter à "${u ? u.name : ''}"`;
+  document.getElementById('bulkSearch').value = '';
+  renderBulkList();
+  document.getElementById('bulkAssignOverlay').classList.add('open');
+}
+function renderBulkList(){
+  const q = document.getElementById('bulkSearch').value.toLowerCase();
+  const unassigned = catalog
+    .filter(d => !d.universe)
+    .filter(d => !q || d.title.toLowerCase().includes(q))
+    .sort((a,b) => a.title.localeCompare(b.title));
+  const box = document.getElementById('bulkList');
+  box.innerHTML = unassigned.map(d => `
+    <label class="bulk-row">
+      <input type="checkbox" class="bulk-check" value="${d.id}">
+      <span>${d.title} <span style="color:var(--muted)">(${d.type||''}${d.year?' · '+d.year:''})</span></span>
+    </label>`).join('') || '<div class="empty-msg">Tous les programmes sont déjà affectés à un univers.</div>';
+}
+function bulkCheckAll(value){
+  document.querySelectorAll('.bulk-check').forEach(c => c.checked = value);
+}
+function confirmBulkAssign(){
+  if (!bulkUniverseId) return;
+  const ids = [...document.querySelectorAll('.bulk-check:checked')].map(c => c.value);
+  if (ids.length === 0) return;
+  const batch = db.batch();
+  ids.forEach(id => batch.update(db.collection('catalog').doc(id), { universe: bulkUniverseId }));
+  batch.commit()
+    .then(() => closeOverlay('bulkAssignOverlay'))
+    .catch(err => alert('Erreur : ' + err.message));
 }
 
 // ── Créateur de liens ──
