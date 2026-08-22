@@ -185,6 +185,46 @@ button{font-family:inherit}
 @media (min-width:700px){
   .controls{top:76px}
 }
+
+/* ── Timelines ── */
+.segmented{display:flex;background:var(--bg3);border-radius:16px;padding:2px;gap:2px}
+.segmented button{border:none;background:transparent;color:var(--muted);font-size:11px;padding:6px 12px;border-radius:14px;cursor:pointer;white-space:nowrap;font-weight:500}
+.segmented button.on{background:var(--red);color:#fff}
+.admin-tools{display:flex;gap:6px;flex-wrap:wrap}
+.mini-btn{padding:5px 12px;border-radius:14px;border:1px solid var(--gold);background:transparent;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap}
+.board-wrap{overflow-x:auto;overflow-y:hidden;padding:20px 16px 40px;position:relative}
+.board{display:flex;gap:28px;position:relative;min-height:200px}
+.uni-col{width:200px;flex-shrink:0}
+.uni-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid}
+.uni-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.uni-name{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.5px}
+.uni-trunk{display:flex;flex-direction:column;gap:10px}
+.uni-branches{display:flex;gap:14px;margin-top:10px}
+.uni-branch{flex:1;display:flex;flex-direction:column;gap:10px;position:relative;padding-top:16px}
+.uni-branch::before{content:'';position:absolute;top:0;left:50%;width:1px;height:16px;background:var(--border)}
+.branch-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center;margin-bottom:2px}
+.tcard{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;cursor:pointer;position:relative;font-size:11px}
+.tcard.watched{border-left:3px solid var(--red)}
+.tcard-title{font-weight:500;line-height:1.3;margin-bottom:2px;padding-right:16px}
+.tcard-meta{font-size:9px;color:var(--muted)}
+.tcard-check{position:absolute;top:6px;right:6px;width:14px;height:14px;border-radius:50%;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:8px}
+.tcard.watched .tcard-check{background:var(--red);border-color:var(--red);color:#fff}
+.tcard-assign{position:absolute;top:6px;left:6px;font-size:11px;color:var(--gold);opacity:.85}
+svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visible}
+.link-label{fill:var(--muted);font-size:9px}
+.unimgr-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.unimgr-row:last-child{border-bottom:none}
+.unimgr-row input[type=color]{width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer}
+.unimgr-row input[type=text]{flex:1;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px}
+.unimgr-order{display:flex;flex-direction:column;gap:2px}
+.unimgr-order button{background:none;border:1px solid var(--border);color:var(--muted);width:20px;height:16px;font-size:9px;cursor:pointer;border-radius:3px}
+.unimgr-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:4px 6px}
+.unimgr-del:hover{color:var(--red)}
+.link-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px}
+.link-row:last-child{border-bottom:none}
+.link-row .link-txt{flex:1}
+.link-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
+.link-del:hover{color:var(--red)}
 </style>
 </head>
 <body>
@@ -193,19 +233,23 @@ button{font-family:inherit}
   <div class="header-top">
     <div class="logo">⬡ Marvel Marathon</div>
     <div class="header-actions">
+      <div class="segmented" id="pageSwitch">
+        <button class="on" onclick="showPage('marathon')">📋 Marathon</button>
+        <button onclick="showPage('timelines')">🕸 Timelines</button>
+      </div>
       <button class="icon-btn" title="Réinitialiser mon marathon" onclick="resetMarathon()">↺</button>
       <button class="admin-btn" id="adminBtn" onclick="openLogin()">Visiteur</button>
     </div>
   </div>
-  <div class="stats-bar">
+  <div class="stats-bar" id="marathonStats">
     <div class="stat"><div class="stat-val" id="statSeen">0</div><div class="stat-lbl">Vus</div></div>
     <div class="stat"><div class="stat-val" id="statTotal">0</div><div class="stat-lbl">Total</div></div>
     <div class="stat"><div class="stat-val" id="statPct">0%</div><div class="stat-lbl">Complété</div></div>
   </div>
-  <div class="progress-wrap"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+  <div class="progress-wrap" id="marathonProgressWrap"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
 </div>
 
-<div class="controls">
+<div class="controls" id="marathonControls">
   <div class="controls-row">
     <input type="text" class="search" id="searchInput" placeholder="Rechercher..." oninput="render()">
     <div class="view-icons">
@@ -228,6 +272,25 @@ button{font-family:inherit}
 </div>
 
 <div class="container" id="main"></div>
+
+<!-- ═══════════ PAGE TIMELINES ═══════════ -->
+<div class="controls" id="timelinesControls" style="display:none">
+  <div class="segmented" id="sortToggle">
+    <button class="on" onclick="setSort('chrono')">Chronologique</button>
+    <button onclick="setSort('release')">Ordre de sortie</button>
+  </div>
+  <div class="segmented" id="tlFilterToggle">
+    <button class="on" onclick="setTlFilter('all')">Tout le catalogue</button>
+    <button onclick="setTlFilter('mine')">Mon marathon</button>
+  </div>
+  <div class="admin-tools" id="timelinesAdminTools" style="display:none">
+    <button class="mini-btn" onclick="openUniverseMgr()">⚙ Univers</button>
+    <button class="mini-btn" onclick="openLinkMgr()">🔗 Liens</button>
+  </div>
+</div>
+<div class="board-wrap" id="boardWrap" style="display:none">
+  <div class="board" id="board"></div>
+</div>
 
 <!-- Connexion admin -->
 <div class="overlay" id="loginOverlay">
@@ -295,6 +358,7 @@ button{font-family:inherit}
       <div class="detail-actions">
         <button class="btn btn-primary" id="detailWatchBtn" onclick="toggleWatched()"></button>
         <button class="btn btn-secondary" id="detailAdminEdit" style="display:none" onclick="openEdit()">Modifier</button>
+        <button class="btn btn-secondary" id="detailAdminAssign" style="display:none" onclick="openAssignFromDetail()">Univers</button>
         <button class="btn btn-secondary" id="detailAdminDelete" style="display:none" onclick="deleteCurrentItem()">Supprimer</button>
       </div>
 
@@ -323,6 +387,57 @@ button{font-family:inherit}
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('studioMgrOverlay')">Fermer</button>
       <button class="btn btn-primary" onclick="addStudio()">Ajouter le studio</button>
+    </div>
+  </div>
+</div>
+
+<!-- Gestion des univers (timelines, admin) -->
+<div class="overlay" id="universeMgrOverlay">
+  <div class="modal">
+    <div class="modal-title">Gérer les univers</div>
+    <div id="universeMgrList"></div>
+    <div class="field" style="margin-top:14px">
+      <label>Nouvel univers</label>
+      <div style="display:flex;gap:8px">
+        <input type="color" id="newUniColor" value="#3A7BD5" style="width:40px;padding:2px;height:34px">
+        <input type="text" id="newUniName" placeholder="Nom de l'univers" style="flex:1;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeOverlay('universeMgrOverlay')">Fermer</button>
+      <button class="btn btn-primary" onclick="addUniverse()">Ajouter</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assignation univers / ordre / branche (timelines, admin) -->
+<div class="overlay" id="assignOverlay">
+  <div class="modal">
+    <div class="modal-title" id="assignTitle">Assigner</div>
+    <div class="field"><label>Univers</label><select id="assignUniverse"></select></div>
+    <div class="field"><label>Position chronologique (nombre, ordre libre)</label><input type="number" id="assignOrder" placeholder="ex: 10"></div>
+    <div class="field"><label>Branche (optionnel — laisser vide si tronc commun)</label><input type="text" id="assignBranch" placeholder="ex: Branche originale"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeOverlay('assignOverlay')">Annuler</button>
+      <button class="btn btn-primary" onclick="saveAssign()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Créateur de liens (timelines, admin) -->
+<div class="overlay" id="linkMgrOverlay">
+  <div class="modal">
+    <div class="modal-title">Liens entre programmes</div>
+    <div class="field"><label>Programme A</label><select id="linkA"></select></div>
+    <div class="field"><label>Programme B</label><select id="linkB"></select></div>
+    <div class="field"><label>Texte (optionnel)</label><input type="text" id="linkLabel" placeholder="ex: Apparition croisée"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeOverlay('linkMgrOverlay')">Fermer</button>
+      <button class="btn btn-primary" onclick="addLink()">Créer le lien</button>
+    </div>
+    <div style="margin-top:16px">
+      <label style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Liens existants</label>
+      <div id="linkList"></div>
     </div>
   </div>
 </div>
@@ -357,10 +472,266 @@ auth.onAuthStateChanged(user => {
   document.getElementById('adminBtn').textContent = isAdmin ? '★ Admin' : 'Visiteur';
   document.getElementById('adminBtn').classList.toggle('active', isAdmin);
   document.getElementById('adminRow').style.display = isAdmin ? 'flex' : 'none';
+  document.getElementById('timelinesAdminTools').style.display = isAdmin ? 'flex' : 'none';
   listenStudios();
   listenCatalog();
   listenProgress(user.uid);
+  listenUniverses();
+  listenLinks();
 });
+
+// ═══════════════════════════════════════════════════════════════
+// NAVIGATION ENTRE PAGES (Marathon / Timelines)
+// ═══════════════════════════════════════════════════════════════
+let currentPage = 'marathon';
+function showPage(page){
+  currentPage = page;
+  document.querySelectorAll('#pageSwitch button').forEach((b,i)=>b.classList.toggle('on', (i===0&&page==='marathon')||(i===1&&page==='timelines')));
+  document.getElementById('marathonStats').style.display = page==='marathon' ? 'flex' : 'none';
+  document.getElementById('marathonProgressWrap').style.display = page==='marathon' ? 'block' : 'none';
+  document.getElementById('marathonControls').style.display = page==='marathon' ? 'flex' : 'none';
+  document.getElementById('main').style.display = page==='marathon' ? '' : 'none';
+  document.getElementById('timelinesControls').style.display = page==='timelines' ? 'flex' : 'none';
+  document.getElementById('boardWrap').style.display = page==='timelines' ? 'block' : 'none';
+  if (page === 'timelines') renderBoard();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TIMELINES — état et réglages
+// ═══════════════════════════════════════════════════════════════
+let universes = [];
+let links = [];
+let sortMode = 'chrono'; // 'chrono' | 'release'
+let tlFilterMode = 'all'; // 'all' | 'mine'
+
+function listenUniverses(){
+  db.collection('universes').orderBy('order').onSnapshot(snap => {
+    universes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if (currentPage === 'timelines') renderBoard();
+  });
+}
+function listenLinks(){
+  db.collection('links').onSnapshot(snap => {
+    links = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if (currentPage === 'timelines') renderBoard();
+  });
+}
+
+function setSort(mode){
+  sortMode = mode;
+  document.querySelectorAll('#sortToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='chrono')||(i===1&&mode==='release')));
+  renderBoard();
+}
+function setTlFilter(mode){
+  tlFilterMode = mode;
+  document.querySelectorAll('#tlFilterToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='all')||(i===1&&mode==='mine')));
+  renderBoard();
+}
+
+// ── Rendu de la frise ──
+function renderBoard(){
+  const board = document.getElementById('board');
+  if (universes.length === 0){
+    board.innerHTML = '<div class="empty-msg">Aucun univers créé pour l\'instant. Utilise "⚙ Univers" en admin pour commencer.</div>';
+    removeLinksSvg();
+    return;
+  }
+  let items = catalog.filter(d => d.universe);
+  if (tlFilterMode === 'mine') items = items.filter(d => isIncluded(d.id));
+
+  board.innerHTML = universes.map(u => {
+    const uItems = items.filter(d => d.universe === u.id);
+    const trunk = uItems.filter(d => !d.branch);
+    const branchNames = [...new Set(uItems.filter(d => d.branch).map(d => d.branch))];
+    const sortFn = sortMode === 'chrono'
+      ? (a,b) => (a.chronoOrder ?? 9999) - (b.chronoOrder ?? 9999)
+      : (a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||'');
+    trunk.sort(sortFn);
+    return `
+      <div class="uni-col" data-uni="${u.id}">
+        <div class="uni-head" style="border-color:${u.color}">
+          <div class="uni-dot" style="background:${u.color}"></div>
+          <div class="uni-name">${u.name}</div>
+        </div>
+        <div class="uni-trunk">${trunk.map(tcardHtml).join('')}</div>
+        ${branchNames.length ? `<div class="uni-branches">
+          ${branchNames.map(bn => {
+            const bItems = uItems.filter(d => d.branch === bn).sort(sortFn);
+            return `<div class="uni-branch"><div class="branch-label">${bn}</div>${bItems.map(tcardHtml).join('')}</div>`;
+          }).join('')}
+        </div>` : ''}
+      </div>`;
+  }).join('');
+
+  requestAnimationFrame(drawLinks);
+}
+
+function tcardHtml(d){
+  const p = progress[d.id] || {};
+  return `
+    <div class="tcard ${p.watched?'watched':''}" data-card="${d.id}" onclick="openDetail('${d.id}')">
+      ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d.id}')" title="Assigner">⚙</span>` : ''}
+      <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d.id}')">${p.watched?'✓':''}</div>
+      <div class="tcard-title">${d.title}</div>
+      <div class="tcard-meta">${d.year||''} · ${d.type||''}</div>
+    </div>`;
+}
+
+// ── Liens visuels entre cartes (SVG recalculé au resize/render) ──
+function removeLinksSvg(){
+  const old = document.getElementById('linksSvg');
+  if (old) old.remove();
+}
+function drawLinks(){
+  removeLinksSvg();
+  if (links.length === 0 || currentPage !== 'timelines') return;
+  const board = document.getElementById('board');
+  const boardRect = board.getBoundingClientRect();
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('id','linksSvg');
+  svg.classList.add('links-svg');
+  svg.setAttribute('width', board.scrollWidth);
+  svg.setAttribute('height', board.scrollHeight);
+  let any = false;
+  links.forEach(l => {
+    const elA = board.querySelector(`[data-card="${l.a}"]`);
+    const elB = board.querySelector(`[data-card="${l.b}"]`);
+    if (!elA || !elB) return;
+    any = true;
+    const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
+    const x1 = ra.left - boardRect.left + ra.width/2, y1 = ra.top - boardRect.top + ra.height/2;
+    const x2 = rb.left - boardRect.left + rb.width/2, y2 = rb.top - boardRect.top + rb.height/2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const mx = (x1+x2)/2;
+    path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    path.setAttribute('stroke', 'var(--gold)');
+    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-dasharray', '4 3');
+    path.setAttribute('opacity', '0.55');
+    svg.appendChild(path);
+    if (l.label){
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.setAttribute('x', mx);
+      text.setAttribute('y', (y1+y2)/2 - 4);
+      text.setAttribute('text-anchor','middle');
+      text.setAttribute('class','link-label');
+      text.textContent = l.label;
+      svg.appendChild(text);
+    }
+  });
+  if (any) board.appendChild(svg);
+}
+window.addEventListener('resize', () => { if (currentPage==='timelines') requestAnimationFrame(drawLinks); });
+
+// ── Gestion des univers (admin) ──
+function openUniverseMgr(){ renderUniverseMgr(); document.getElementById('universeMgrOverlay').classList.add('open'); }
+function renderUniverseMgr(){
+  const box = document.getElementById('universeMgrList');
+  box.innerHTML = universes.map((u,i) => `
+    <div class="unimgr-row">
+      <div class="unimgr-order">
+        <button onclick="moveUniverse('${u.id}',-1)" ${i===0?'disabled':''}>▲</button>
+        <button onclick="moveUniverse('${u.id}',1)" ${i===universes.length-1?'disabled':''}>▼</button>
+      </div>
+      <input type="color" value="${u.color}" onchange="recolorUniverse('${u.id}', this.value)">
+      <input type="text" value="${u.name}" onchange="renameUniverse('${u.id}', this.value)">
+      <button class="unimgr-del" onclick="deleteUniverse('${u.id}','${u.name.replace(/'/g,"\\'")}')">🗑</button>
+    </div>`).join('') || '<div class="empty-msg">Aucun univers.</div>';
+}
+function addUniverse(){
+  const name = document.getElementById('newUniName').value.trim();
+  const color = document.getElementById('newUniColor').value;
+  if (!name) return;
+  const order = universes.length;
+  db.collection('universes').add({ name, color, order }).then(() => { document.getElementById('newUniName').value=''; });
+}
+function recolorUniverse(id, color){ db.collection('universes').doc(id).update({ color }); }
+function renameUniverse(id, name){ name=name.trim(); if(name) db.collection('universes').doc(id).update({ name }); }
+async function moveUniverse(id, dir){
+  const idx = universes.findIndex(u => u.id === id);
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= universes.length) return;
+  const a = universes[idx], b = universes[swapIdx];
+  const batch = db.batch();
+  batch.update(db.collection('universes').doc(a.id), { order: b.order });
+  batch.update(db.collection('universes').doc(b.id), { order: a.order });
+  await batch.commit();
+}
+async function deleteUniverse(id, name){
+  const affected = catalog.filter(d => d.universe === id);
+  const msg = affected.length > 0
+    ? `${affected.length} programme(s) sont dans "${name}" et perdront leur assignation. Continuer ?`
+    : `Supprimer l'univers "${name}" ?`;
+  if (!confirm(msg)) return;
+  const batch = db.batch();
+  affected.forEach(d => batch.update(db.collection('catalog').doc(d.id), { universe: firebase.firestore.FieldValue.delete(), chronoOrder: firebase.firestore.FieldValue.delete(), branch: firebase.firestore.FieldValue.delete() }));
+  batch.delete(db.collection('universes').doc(id));
+  await batch.commit();
+}
+
+// ── Assignation d'un programme ──
+let assigningId = null;
+function openAssign(id){
+  assigningId = id;
+  const d = catalog.find(x => x.id === id);
+  if (!d) return;
+  document.getElementById('assignTitle').textContent = d.title;
+  document.getElementById('assignUniverse').innerHTML = '<option value="">— Aucun —</option>' + universes.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+  document.getElementById('assignUniverse').value = d.universe || '';
+  document.getElementById('assignOrder').value = d.chronoOrder ?? '';
+  document.getElementById('assignBranch').value = d.branch || '';
+  document.getElementById('assignOverlay').classList.add('open');
+}
+function saveAssign(){
+  if (!assigningId) return;
+  const universe = document.getElementById('assignUniverse').value;
+  const orderVal = document.getElementById('assignOrder').value;
+  const branch = document.getElementById('assignBranch').value.trim();
+  const update = {};
+  update.universe = universe ? universe : firebase.firestore.FieldValue.delete();
+  update.chronoOrder = orderVal !== '' ? Number(orderVal) : firebase.firestore.FieldValue.delete();
+  update.branch = branch ? branch : firebase.firestore.FieldValue.delete();
+  db.collection('catalog').doc(assigningId).update(update)
+    .then(() => closeOverlay('assignOverlay'))
+    .catch(err => alert('Erreur : ' + err.message));
+}
+
+// ── Créateur de liens ──
+function openLinkMgr(){
+  const opts = catalog.slice().sort((a,b)=>a.title.localeCompare(b.title)).map(d=>`<option value="${d.id}">${d.title}</option>`).join('');
+  document.getElementById('linkA').innerHTML = opts;
+  document.getElementById('linkB').innerHTML = opts;
+  document.getElementById('linkLabel').value = '';
+  renderLinkList();
+  document.getElementById('linkMgrOverlay').classList.add('open');
+}
+function renderLinkList(){
+  const box = document.getElementById('linkList');
+  box.innerHTML = links.map(l => {
+    const a = catalog.find(d=>d.id===l.a), b = catalog.find(d=>d.id===l.b);
+    return `<div class="link-row">
+      <span class="link-txt">${a?a.title:'?'} ↔ ${b?b.title:'?'}${l.label?' — '+l.label:''}</span>
+      <button class="link-del" onclick="deleteLink('${l.id}')">🗑</button>
+    </div>`;
+  }).join('') || '<div class="empty-msg">Aucun lien.</div>';
+}
+function addLink(){
+  const a = document.getElementById('linkA').value;
+  const b = document.getElementById('linkB').value;
+  const label = document.getElementById('linkLabel').value.trim();
+  if (!a || !b || a === b) return alert('Choisis deux programmes différents.');
+  db.collection('links').add({ a, b, label }).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
+}
+function deleteLink(id){
+  if (!confirm('Supprimer ce lien ?')) return;
+  db.collection('links').doc(id).delete();
+}
+function openAssignFromDetail(){
+  if (!currentDetailId) return;
+  closeOverlay('detailOverlay');
+  openAssign(currentDetailId);
+}
 
 // ═══════════════════════════════════════════════════════════════
 // FIRESTORE — studios (lecture publique, écriture admin only)
@@ -873,6 +1244,7 @@ async function openDetail(id){
   document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${id}',${n});refreshDetailRating()">★</span>`).join('');
   document.getElementById('detailAdminDelete').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminEdit').style.display = isAdmin ? 'inline-block' : 'none';
+  document.getElementById('detailAdminAssign').style.display = isAdmin ? 'inline-block' : 'none';
   updateDetailNavButtons();
 
   const wBtn = document.getElementById('detailWatchBtn');
