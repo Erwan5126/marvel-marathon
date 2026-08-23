@@ -307,10 +307,11 @@ auth.onAuthStateChanged(user => {
   if (isAdmin){
     document.getElementById('adminBtn').textContent = '★ Admin';
   } else if (!user.isAnonymous){
+    document.getElementById('adminBtn').textContent = 'Connecté';
     db.collection('progress').doc(user.uid).get().then(doc => {
       const name = doc.exists ? doc.data().displayName : null;
-      document.getElementById('adminBtn').textContent = name || 'Connecté';
-    });
+      if (name) document.getElementById('adminBtn').textContent = name;
+    }).catch(() => {});
   } else {
     document.getElementById('adminBtn').textContent = 'Visiteur';
   }
@@ -347,7 +348,8 @@ function doLogin(){
     const current = auth.currentUser;
     const finish = (user) => {
       db.collection('progress').doc(user.uid).set({ displayName: name }, { merge:true })
-        .then(() => closeOverlay('loginOverlay'));
+        .then(() => closeOverlay('loginOverlay'))
+        .catch(() => closeOverlay('loginOverlay'));
     };
     if (current && current.isAnonymous){
       current.linkWithCredential(credential)
