@@ -449,9 +449,11 @@ function renderBoard(){
   const dateSort = (a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||'');
 
   // Construit la liste des colonnes : tronc de chaque univers, suivi de ses branches
+  // — uniquement si au moins un programme y est visible (respecte le filtre en cours)
   const columns = [];
   universes.forEach(u => {
-    columns.push({ type:'trunk', u, key:u.id });
+    const trunkItems = items.filter(d => d.universe===u.id && !d.branch);
+    if (trunkItems.length > 0) columns.push({ type:'trunk', u, key:u.id });
     const bNames = [...new Set(items.filter(d => d.universe===u.id && d.branch).map(d=>d.branch))];
     bNames.forEach(bn => columns.push({ type:'branch', u, branchName:bn, key:u.id+'::'+bn }));
   });
