@@ -1337,8 +1337,17 @@ function refreshDetailRating(){
 }
 
 // ── Navigation swipe / flèches entre fiches (respecte les filtres/vue en cours) ──
-function detailNav(dir){
+function navList(){
   const list = filteredData();
+  if (currentView === 'studio' && currentDetailId){
+    const cur = catalog.find(d => d.id === currentDetailId);
+    if (cur) return list.filter(d => d.studio === cur.studio);
+  }
+  return list;
+}
+
+function detailNav(dir){
+  const list = navList();
   const idx = list.findIndex(d => d.id === currentDetailId);
   if (idx === -1) return;
   const nextIdx = idx + dir;
@@ -1347,7 +1356,7 @@ function detailNav(dir){
 }
 
 function updateDetailNavButtons(){
-  const list = filteredData();
+  const list = navList();
   const idx = list.findIndex(d => d.id === currentDetailId);
   document.getElementById('detailPrevBtn').disabled = idx <= 0;
   document.getElementById('detailNextBtn').disabled = idx === -1 || idx >= list.length - 1;
