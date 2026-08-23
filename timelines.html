@@ -368,20 +368,18 @@ function renderBoard(){
   // Années réellement présentes (toutes colonnes confondues), triées
   const years = [...new Set(items.map(yearOf))].filter(y => y !== '?').sort();
 
-  // Nombre de lignes réservées par année = le plus grand nombre de sorties
-  // qu'une même colonne (tronc ou branche) a cette année-là
+  // Classement GLOBAL par date exacte à l'intérieur de chaque année (toutes colonnes
+  // confondues) : chaque programme a sa propre ligne, même si un autre univers a
+  // un programme la même année — pour ne jamais perdre l'ordre de sortie réel.
+  const yearGroups = {};
+  years.forEach(y => { yearGroups[y] = items.filter(d => yearOf(d) === y).sort(dateSort); });
   const yearRowCount = {};
-  years.forEach(y => {
-    let max = 1;
-    columns.forEach(col => {
-      const c = itemsOfColumn(col).filter(d => yearOf(d)===y).length;
-      if (c > max) max = c;
-    });
-    yearRowCount[y] = max;
-  });
+  years.forEach(y => { yearRowCount[y] = yearGroups[y].length; });
   let cum = 0;
   const yearRowStart = {};
   years.forEach(y => { yearRowStart[y] = cum; cum += yearRowCount[y]; });
+  const rankOf = {};
+  years.forEach(y => { yearGroups[y].forEach((d, idx) => rankOf[d.id] = idx); });
 
   document.getElementById('board').style.setProperty('--n-uni', columns.length);
 
@@ -396,13 +394,10 @@ function renderBoard(){
     } else {
       html += `<div class="branch-head" style="grid-column:${gcol};border-color:${col.u.color}"><span class="branch-head-label" style="color:${col.u.color}">↳ ${col.branchName}</span></div>`;
     }
-    const colItems = itemsOfColumn(col);
-    years.forEach(y => {
-      const yItems = colItems.filter(d => yearOf(d) === y).sort(dateSort);
-      yItems.forEach((d, idx) => {
-        const row = 2 + yearRowStart[y] + idx;
-        html += cardHtml(d, col.u.color, gcol, row, col.key);
-      });
+    itemsOfColumn(col).forEach(d => {
+      const y = yearOf(d);
+      const row = 2 + yearRowStart[y] + rankOf[d.id];
+      html += cardHtml(d, col.u.color, gcol, row, col.key);
     });
   });
   board.innerHTML = html;
@@ -493,19 +488,24 @@ function drawLinks(){
     any = true;
     const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
 
-    const x1 = ra.left - boardRect.left + ra.width/2;
-    const y1 = ra.bottom - boardRect.top; // sort toujours par le bas de A
-
-    const aMidY = ra.top + ra.height/2, bMidY = rb.top + rb.height/2;
-    const bBelow = bMidY > aMidY;
-    const x2 = rb.left - boardRect.left + rb.width/2;
-    const y2 = (bBelow ? rb.top : rb.bottom) - boardRect.top; // entre par le côté qui fait face à A
-
     // Couloir vertical : dans l'espace entre colonnes, jamais sur une carte
     const spaceRight = boardRect.right - ra.right;
     const goRight = spaceRight > 18;
     const fan = (i % 3 - 1) * 5; // écarte légèrement les liens qui partagent le même couloir
     const laneX = (goRight ? (ra.right - boardRect.left + 10) : (ra.left - boardRect.left - 10)) + fan;
+
+    // On décale légèrement les points d'attache par rapport au centre exact de la carte,
+    // pour ne jamais tomber pile sur le fil automatique de la colonne (qui passe au centre).
+    const offset = 8;
+    const centerA = ra.left - boardRect.left + ra.width/2;
+    const x1 = centerA + (goRight ? offset : -offset);
+    const y1 = ra.bottom - boardRect.top; // sort toujours par le bas de A
+
+    const aMidY = ra.top + ra.height/2, bMidY = rb.top + rb.height/2;
+    const bBelow = bMidY > aMidY;
+    const centerB = rb.left - boardRect.left + rb.width/2;
+    const x2 = centerB + (laneX > centerB ? offset : -offset);
+    const y2 = (bBelow ? rb.top : rb.bottom) - boardRect.top; // entre par le côté qui fait face à A
 
     const gapDrop = 6;
     const y1b = y1 + gapDrop;
