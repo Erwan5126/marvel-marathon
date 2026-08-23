@@ -113,6 +113,8 @@ button{font-family:inherit}
 .tier-card.dragging{opacity:.4}
 .tier-card img{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:6px;background:#333;display:block;border:2px solid transparent}
 .tier-card-title{font-size:9px;margin-top:3px;line-height:1.2;text-align:center;color:var(--muted)}
+.tier-card-nav{display:flex;justify-content:space-between;margin-top:2px}
+.tier-card-nav button{background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:9px;width:18px;height:16px;border-radius:3px;cursor:pointer}
 .tier-empty{font-size:10px;color:var(--muted);padding:0 8px;display:flex;align-items:center}
 .rate10{display:flex;gap:4px;flex-wrap:wrap}
 .rate10 button{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:11px;cursor:pointer;font-weight:600}
@@ -1140,13 +1142,21 @@ function deleteCurrentItem(){
 // FILTRES / RECHERCHE
 // ═══════════════════════════════════════════════════════════════
 let activeType = null;
+let activeWatched = null; // null='tout' | true='vu' | false='non vu'
 function buildFilters(){
   const types = [...new Set(catalog.map(d => d.type))];
   const box = document.getElementById('typeFilters');
-  box.innerHTML = types.map(t => `<button class="fbtn ${activeType===t?'on':''}" onclick="toggleTypeFilter('${t}')">${t}</button>`).join('');
+  box.innerHTML = types.map(t => `<button class="fbtn ${activeType===t?'on':''}" onclick="toggleTypeFilter('${t}')">${t}</button>`).join('')
+    + `<button class="fbtn ${activeWatched===true?'on':''}" onclick="toggleWatchedFilter(true)">Vu</button>`
+    + `<button class="fbtn ${activeWatched===false?'on':''}" onclick="toggleWatchedFilter(false)">Non vu</button>`;
 }
 function toggleTypeFilter(t){
   activeType = activeType === t ? null : t;
+  buildFilters();
+  render();
+}
+function toggleWatchedFilter(v){
+  activeWatched = activeWatched === v ? null : v;
   buildFilters();
   render();
 }
@@ -1155,6 +1165,7 @@ function filteredData(){
   const q = document.getElementById('searchInput').value.toLowerCase();
   return catalog.filter(d => {
     if (activeType && d.type !== activeType) return false;
+    if (activeWatched !== null && !!progress[d.id]?.watched !== activeWatched) return false;
     if (q && !d.title.toLowerCase().includes(q)) return false;
     if (currentScope === 'mine' && !isIncluded(d.id)) return false;
     return true;
@@ -1304,16 +1315,34 @@ function renderTierList(list, main){
       <div class="tier-row">
         <div class="tier-label" style="background:${t.color}">${t.label}</div>
         <div class="tier-cards" data-tier="${t.n}">
-          ${items.length ? items.map(d => `
+          ${items.length ? items.map((d,i) => `
             <div class="tier-card" data-card="${d.id}" onclick="openDetail('${d.id}')">
               ${d.poster ? `<img src="${d.poster}">` : `<div class="mosaic-item-ph" style="aspect-ratio:2/3;border-radius:6px">${d.title}</div>`}
               <div class="tier-card-title">${d.title}</div>
+              <div class="tier-card-nav" onclick="event.stopPropagation()">
+                <button onclick="moveTierCard('${d.id}',-1)" ${i===0?'disabled':''}>‹</button>
+                <button onclick="moveTierCard('${d.id}',1)" ${i===items.length-1?'disabled':''}>›</button>
+              </div>
             </div>`).join('') : `<div class="tier-empty">—</div>`}
         </div>
       </div>`;
   }).join('') + `<div class="empty-msg" style="padding-top:1rem">Note un programme (dans sa fiche) pour qu'il apparaisse ici — les programmes non notés ne sont pas affichés.</div>`;
 
   requestAnimationFrame(initTierDrag);
+}
+
+function moveTierCard(id, dir){
+  const rating = progress[id]?.rating;
+  if (!rating) return;
+  const list = catalog.filter(d => progress[d.id]?.rating === rating)
+    .sort((a,b) => (progress[a.id]?.tierPos ?? 9999) - (progress[b.id]?.tierPos ?? 9999));
+  const idx = list.findIndex(d => d.id === id);
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= list.length) return;
+  const ids = list.map(d => d.id);
+  [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+  const batchPromises = ids.map((cid, i) => progressRef(cid).set({ tierPos: i }, { merge:true }));
+  Promise.all(batchPromises).catch(err => console.error(err));
 }
 
 let tierDragEl = null, tierDragRow = null;
