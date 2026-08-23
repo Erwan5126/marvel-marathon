@@ -109,8 +109,7 @@ button{font-family:inherit}
 .tier-row{display:flex;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;min-height:96px}
 .tier-label{width:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:26px;color:#fff}
 .tier-cards{flex:1;display:flex;gap:8px;padding:8px;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.tier-card{width:88px;flex-shrink:0;cursor:grab;position:relative;touch-action:none}
-.tier-card.dragging{opacity:.4}
+.tier-card{width:88px;flex-shrink:0;position:relative}
 .tier-card img{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:6px;background:#333;display:block;border:2px solid transparent}
 .tier-card-title{font-size:9px;margin-top:3px;line-height:1.2;text-align:center;color:var(--muted)}
 .tier-card-nav{display:flex;justify-content:space-between;margin-top:2px}
@@ -1327,8 +1326,6 @@ function renderTierList(list, main){
         </div>
       </div>`;
   }).join('') + `<div class="empty-msg" style="padding-top:1rem">Note un programme (dans sa fiche) pour qu'il apparaisse ici — les programmes non notés ne sont pas affichés.</div>`;
-
-  requestAnimationFrame(initTierDrag);
 }
 
 function moveTierCard(id, dir){
@@ -1343,45 +1340,6 @@ function moveTierCard(id, dir){
   [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
   const batchPromises = ids.map((cid, i) => progressRef(cid).set({ tierPos: i }, { merge:true }));
   Promise.all(batchPromises).catch(err => console.error(err));
-}
-
-let tierDragEl = null, tierDragRow = null;
-function initTierDrag(){
-  document.querySelectorAll('.tier-cards').forEach(row => {
-    if (row.dataset.dragInit) return;
-    row.dataset.dragInit = '1';
-    row.addEventListener('pointerdown', e => {
-      if (e.target.closest('.tier-card-nav')) return; // ne pas capturer le pointeur sur les flèches ‹ ›
-      const card = e.target.closest('.tier-card');
-      if (!card) return;
-      tierDragEl = card;
-      tierDragRow = row;
-      card.setPointerCapture(e.pointerId);
-      card.classList.add('dragging');
-    });
-    row.addEventListener('pointermove', e => {
-      if (!tierDragEl || tierDragRow !== row) return;
-      const target = document.elementFromPoint(e.clientX, e.clientY);
-      const overCard = target && target.closest('.tier-card');
-      if (overCard && overCard !== tierDragEl && overCard.parentElement === row){
-        const rect = overCard.getBoundingClientRect();
-        const before = e.clientX < rect.left + rect.width/2;
-        row.insertBefore(tierDragEl, before ? overCard : overCard.nextSibling);
-      }
-    });
-    row.addEventListener('pointerup', async () => {
-      if (!tierDragEl) return;
-      tierDragEl.classList.remove('dragging');
-      const cards = [...row.querySelectorAll('.tier-card')];
-      tierDragEl = null; tierDragRow = null;
-      const batchPromises = cards.map((el, i) => progressRef(el.dataset.card).set({ tierPos: i }, { merge:true }));
-      await Promise.all(batchPromises).catch(err => console.error(err));
-    });
-    row.addEventListener('pointercancel', () => {
-      if (tierDragEl) tierDragEl.classList.remove('dragging');
-      tierDragEl = null; tierDragRow = null;
-    });
-  });
 }
 
 function cardManage(d){
