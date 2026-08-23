@@ -57,10 +57,11 @@ button{font-family:inherit}
   .board{grid-template-columns:44px repeat(var(--n-uni,1), 1fr)}
 }
 .year-label{grid-column:1;display:flex;align-items:flex-start;justify-content:center;padding-top:2px;font-family:'Bebas Neue',sans-serif;font-size:13px;color:var(--muted);border-right:1px solid var(--border)}
-.uni-head{grid-row:1;display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:2px solid}
+.col-bg{border-radius:10px;pointer-events:none;margin:-6px -6px 0}
+.uni-head{grid-row:1;display:flex;align-items:center;gap:8px;padding-bottom:8px;padding-top:8px;border-bottom:2px solid;position:sticky;top:var(--sticky-top, 90px);z-index:20;background:var(--bg)}
 .uni-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .uni-name{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.5px}
-.branch-head{grid-row:1;display:flex;align-items:flex-end;gap:4px;padding-bottom:8px;border-bottom:1px dashed}
+.branch-head{grid-row:1;display:flex;align-items:flex-end;gap:4px;padding-bottom:8px;padding-top:8px;border-bottom:1px dashed;position:sticky;top:var(--sticky-top, 90px);z-index:20;background:var(--bg)}
 .branch-head-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;line-height:1.2}
 
 
@@ -340,6 +341,14 @@ function setFilter(mode){
 
 // ── Rendu de la frise ──
 function fmtYear(d){ return d.year || (d.releaseDate||'').slice(0,4) || ''; }
+function hexToRgba(hex, alpha){
+  hex = (hex||'#888888').replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
+  const r = parseInt(hex.substring(0,2),16) || 0;
+  const g = parseInt(hex.substring(2,4),16) || 0;
+  const b = parseInt(hex.substring(4,6),16) || 0;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 function renderBoard(){
   const board = document.getElementById('board');
@@ -384,6 +393,14 @@ function renderBoard(){
   document.getElementById('board').style.setProperty('--n-uni', columns.length);
 
   let html = '';
+  // Fonds de colonne : uniquement entre le premier et le dernier programme de la colonne
+  columns.forEach((col, ci) => {
+    const gcol = ci + 2;
+    const rows = itemsOfColumn(col).map(d => 2 + yearRowStart[yearOf(d)] + rankOf[d.id]);
+    if (rows.length === 0) return;
+    const rowStart = Math.min(...rows), rowEnd = Math.max(...rows);
+    html += `<div class="col-bg" style="grid-column:${gcol};grid-row:${rowStart} / span ${rowEnd - rowStart + 1};background:${hexToRgba(col.u.color, 0.15)}"></div>`;
+  });
   years.forEach(y => {
     html += `<div class="year-label" style="grid-row:${2+yearRowStart[y]} / span ${yearRowCount[y]}">${y}</div>`;
   });
@@ -403,7 +420,17 @@ function renderBoard(){
   board.innerHTML = html;
 
   requestAnimationFrame(drawLinks);
+  requestAnimationFrame(updateStickyOffset);
 }
+
+function updateStickyOffset(){
+  const controls = document.querySelector('.controls');
+  if (!controls) return;
+  const offset = controls.getBoundingClientRect().bottom;
+  document.documentElement.style.setProperty('--sticky-top', offset + 'px');
+}
+window.addEventListener('resize', () => requestAnimationFrame(updateStickyOffset));
+window.addEventListener('load', updateStickyOffset);
 
 function cardHtml(d, color, col, row, colKey){
   const p = progress[d.id] || {};
