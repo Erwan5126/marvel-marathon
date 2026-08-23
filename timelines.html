@@ -51,8 +51,13 @@ button{font-family:inherit}
 .mini-btn{padding:5px 12px;border-radius:14px;border:1px solid var(--gold);background:transparent;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap}
 
 .board-wrap{overflow-x:auto;overflow-y:hidden;padding:20px 16px 40px;position:relative}
-.board{display:flex;gap:28px;position:relative;min-height:200px}
+.board{display:flex;gap:20px;position:relative;min-height:200px}
 .uni-col{width:200px;flex-shrink:0}
+@media (min-width:900px){
+  .board-wrap{overflow-x:hidden}
+  .board{width:100%}
+  .uni-col{width:auto;flex:1 1 0;min-width:0}
+}
 .uni-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid}
 .uni-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .uni-name{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.5px}
@@ -94,7 +99,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .btn-secondary{background:var(--bg3);border:1px solid var(--border);color:var(--muted)}
 .close-x{position:absolute;top:10px;right:10px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;cursor:pointer;background:rgba(0,0,0,.5);border:none;border-radius:50%}
 
-.unimgr-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)}
+.unimgr-row{display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .unimgr-row:last-child{border-bottom:none}
 .unimgr-row input[type=color]{width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer}
 .unimgr-row input[type=text]{flex:1;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px}
@@ -206,6 +211,12 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="modal-title">Liens entre programmes</div>
     <div class="field"><label>Programme A</label><select id="linkA"></select></div>
     <div class="field"><label>Programme B</label><select id="linkB"></select></div>
+    <div class="field"><label>Type de relation</label>
+      <select id="linkType">
+        <option value="sequel">B est la suite directe de A (flèche pleine)</option>
+        <option value="reference">Simple référence croisée (pointillé)</option>
+      </select>
+    </div>
     <div class="field"><label>Texte (optionnel)</label><input type="text" id="linkLabel" placeholder="ex: Apparition croisée"></div>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('linkMgrOverlay')">Fermer</button>
@@ -371,7 +382,7 @@ function renderBoard(){
           <div class="uni-dot" style="background:${u.color}"></div>
           <div class="uni-name">${u.name}</div>
         </div>
-        <div class="uni-trunk">${trunk.map(d => cardHtml(d, u.color)).join('')}</div>
+        <div class="uni-trunk" style="padding-top:${u.offset||0}px">${trunk.map(d => cardHtml(d, u.color)).join('')}</div>
         ${branchNames.length ? `<div class="uni-branches">
           ${branchNames.map(bn => {
             const bItems = uItems.filter(d => d.branch === bn).sort(sortFn);
@@ -412,31 +423,74 @@ function drawLinks(){
   svg.classList.add('links-svg');
   svg.setAttribute('width', board.scrollWidth);
   svg.setAttribute('height', board.scrollHeight);
+
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+  marker.setAttribute('id','linkArrow');
+  marker.setAttribute('viewBox','0 0 10 10');
+  marker.setAttribute('refX','8'); marker.setAttribute('refY','5');
+  marker.setAttribute('markerWidth','6'); marker.setAttribute('markerHeight','6');
+  marker.setAttribute('orient','auto-start-reverse');
+  const arrowPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+  arrowPath.setAttribute('d','M0,0L10,5L0,10z');
+  arrowPath.setAttribute('fill','var(--gold)');
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
   let any = false;
-  links.forEach(l => {
+  const sideOffsets = {}; // fanne plusieurs liens qui sortent du même côté pour éviter qu'ils se superposent
+  links.forEach((l, i) => {
     const elA = board.querySelector(`[data-card="${l.a}"]`);
     const elB = board.querySelector(`[data-card="${l.b}"]`);
     if (!elA || !elB) return;
     any = true;
     const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
-    const x1 = ra.left - boardRect.left + ra.width/2, y1 = ra.top - boardRect.top + ra.height/2;
-    const x2 = rb.left - boardRect.left + rb.width/2, y2 = rb.top - boardRect.top + rb.height/2;
+    const sameColumn = Math.abs(ra.left - rb.left) < 5;
+    const y1 = ra.top - boardRect.top + ra.height/2;
+    const y2 = rb.top - boardRect.top + rb.height/2;
+    let x1, x2, midX;
+
+    if (sameColumn){
+      // Même colonne : on sort par la droite des deux cartes et on boucle par l'extérieur
+      const key = 'r' + Math.round(ra.left);
+      sideOffsets[key] = (sideOffsets[key] || 0) + 1;
+      const bulge = 22 + (sideOffsets[key] % 3) * 10;
+      x1 = ra.right - boardRect.left;
+      x2 = rb.right - boardRect.left;
+      midX = Math.max(x1, x2) + bulge;
+    } else if (rb.left > ra.left){
+      // B est dans une colonne à droite de A
+      x1 = ra.right - boardRect.left;
+      x2 = rb.left - boardRect.left;
+      midX = (x1 + x2) / 2;
+    } else {
+      // B est dans une colonne à gauche de A
+      x1 = ra.left - boardRect.left;
+      x2 = rb.right - boardRect.left;
+      midX = (x1 + x2) / 2;
+    }
+
+    const isSequel = l.type !== 'reference';
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    const mx = (x1+x2)/2;
-    path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+    path.setAttribute('d', `M${x1},${y1} L${midX},${y1} L${midX},${y2} L${x2},${y2}`);
+    path.setAttribute('stroke-linejoin', 'round');
     path.setAttribute('stroke', 'var(--gold)');
-    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('stroke-width', isSequel ? '2' : '1.3');
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke-dasharray', '4 3');
-    path.setAttribute('opacity', '0.55');
+    if (!isSequel) path.setAttribute('stroke-dasharray', '4 3');
+    path.setAttribute('opacity', isSequel ? '0.85' : '0.5');
+    if (isSequel) path.setAttribute('marker-end', 'url(#linkArrow)');
     svg.appendChild(path);
-    if (l.label){
+
+    const labelText = l.label || (isSequel ? 'Suite' : '');
+    if (labelText){
       const text = document.createElementNS('http://www.w3.org/2000/svg','text');
-      text.setAttribute('x', mx);
+      text.setAttribute('x', midX);
       text.setAttribute('y', (y1+y2)/2 - 4);
       text.setAttribute('text-anchor','middle');
       text.setAttribute('class','link-label');
-      text.textContent = l.label;
+      text.textContent = labelText;
       svg.appendChild(text);
     }
   });
@@ -496,15 +550,20 @@ function renderUniverseMgr(){
       </div>
       <input type="color" value="${u.color}" onchange="recolorUniverse('${u.id}', this.value)">
       <input type="text" value="${u.name}" onchange="renameUniverse('${u.id}', this.value)">
+      <input type="number" value="${u.offset||0}" title="Décalage vertical (px)" style="width:56px;padding:6px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px" onchange="setUniverseOffset('${u.id}', this.value)">
       <button class="unimgr-del" onclick="deleteUniverse('${u.id}','${u.name.replace(/'/g,"\\'")}')">🗑</button>
     </div>`).join('') || '<div class="empty-msg">Aucun univers.</div>';
+}
+function setUniverseOffset(id, value){
+  const px = Math.max(0, Number(value) || 0);
+  db.collection('universes').doc(id).update({ offset: px });
 }
 function addUniverse(){
   const name = document.getElementById('newUniName').value.trim();
   const color = document.getElementById('newUniColor').value;
   if (!name) return;
   const order = universes.length;
-  db.collection('universes').add({ name, color, order }).then(() => { document.getElementById('newUniName').value=''; });
+  db.collection('universes').add({ name, color, order, offset: 0 }).then(() => { document.getElementById('newUniName').value=''; });
 }
 function recolorUniverse(id, color){ db.collection('universes').doc(id).update({ color }); }
 function renameUniverse(id, name){ name=name.trim(); if(name) db.collection('universes').doc(id).update({ name }); }
@@ -615,8 +674,9 @@ function renderLinkList(){
   const box = document.getElementById('linkList');
   box.innerHTML = links.map(l => {
     const a = catalog.find(d=>d.id===l.a), b = catalog.find(d=>d.id===l.b);
+    const arrow = l.type === 'reference' ? '↔' : '→';
     return `<div class="link-row">
-      <span class="link-txt">${a?a.title:'?'} ↔ ${b?b.title:'?'}${l.label?' — '+l.label:''}</span>
+      <span class="link-txt">${a?a.title:'?'} ${arrow} ${b?b.title:'?'}${l.label?' — '+l.label:''}</span>
       <button class="link-del" onclick="deleteLink('${l.id}')">🗑</button>
     </div>`;
   }).join('') || '<div class="empty-msg">Aucun lien.</div>';
@@ -624,9 +684,10 @@ function renderLinkList(){
 function addLink(){
   const a = document.getElementById('linkA').value;
   const b = document.getElementById('linkB').value;
+  const type = document.getElementById('linkType').value;
   const label = document.getElementById('linkLabel').value.trim();
   if (!a || !b || a === b) return alert('Choisis deux programmes différents.');
-  db.collection('links').add({ a, b, label }).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
+  db.collection('links').add({ a, b, type, label }).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
 }
 function deleteLink(id){
   if (!confirm('Supprimer ce lien ?')) return;
