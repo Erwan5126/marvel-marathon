@@ -401,7 +401,7 @@ function renderBoard(){
       const yItems = colItems.filter(d => yearOf(d) === y).sort(dateSort);
       yItems.forEach((d, idx) => {
         const row = 2 + yearRowStart[y] + idx;
-        html += cardHtml(d, col.u.color, gcol, row);
+        html += cardHtml(d, col.u.color, gcol, row, col.key);
       });
     });
   });
@@ -410,10 +410,10 @@ function renderBoard(){
   requestAnimationFrame(drawLinks);
 }
 
-function cardHtml(d, color, col, row){
+function cardHtml(d, color, col, row, colKey){
   const p = progress[d.id] || {};
   return `
-    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d.id}" style="--uc:${color};grid-column:${col};grid-row:${row}" onclick="openDetail('${d.id}')">
+    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d.id}" data-colkey="${colKey}" style="--uc:${color};grid-column:${col};grid-row:${row}" onclick="openDetail('${d.id}')">
       ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d.id}')" title="Assigner">⚙</span>` : ''}
       <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d.id}')">${p.watched?'✓':''}</div>
       <div class="tcard-title">${d.title}</div>
@@ -428,9 +428,11 @@ function removeLinksSvg(){
 }
 function drawLinks(){
   removeLinksSvg();
-  if (links.length === 0) return;
   const board = document.getElementById('board');
   const boardRect = board.getBoundingClientRect();
+
+  // Le fil automatique par colonne se dessine dès qu'il y a au moins 2 cartes dans une colonne,
+  // même s'il n'y a aucun lien manuel — donc on continue même si links.length === 0.
   const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.setAttribute('id','linksSvg');
   svg.classList.add('links-svg');
@@ -438,69 +440,97 @@ function drawLinks(){
   svg.setAttribute('height', board.scrollHeight);
 
   const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
-  const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
-  marker.setAttribute('id','linkArrow');
-  marker.setAttribute('viewBox','0 0 10 10');
-  marker.setAttribute('refX','8'); marker.setAttribute('refY','5');
-  marker.setAttribute('markerWidth','6'); marker.setAttribute('markerHeight','6');
-  marker.setAttribute('orient','auto-start-reverse');
-  const arrowPath = document.createElementNS('http://www.w3.org/2000/svg','path');
-  arrowPath.setAttribute('d','M0,0L10,5L0,10z');
-  arrowPath.setAttribute('fill','var(--gold)');
-  marker.appendChild(arrowPath);
-  defs.appendChild(marker);
   svg.appendChild(defs);
+  function ensureArrowMarker(color, id){
+    if (defs.querySelector(`#${id}`)) return;
+    const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+    marker.setAttribute('id', id);
+    marker.setAttribute('viewBox','0 0 10 10');
+    marker.setAttribute('refX','8'); marker.setAttribute('refY','5');
+    marker.setAttribute('markerWidth','6'); marker.setAttribute('markerHeight','6');
+    marker.setAttribute('orient','auto-start-reverse');
+    const arrowPath = document.createElementNS('http://www.w3.org/2000/svg','path');
+    arrowPath.setAttribute('d','M0,0L10,5L0,10z');
+    arrowPath.setAttribute('fill', color);
+    marker.appendChild(arrowPath);
+    defs.appendChild(marker);
+  }
 
   let any = false;
-  const sideOffsets = {}; // fanne plusieurs liens qui sortent du même côté pour éviter qu'ils se superposent
+
+  // ── Fil automatique : relie les cartes consécutives d'une même colonne (tronc ou branche) ──
+  const byCol = {};
+  board.querySelectorAll('.tcard').forEach(el => {
+    const k = el.dataset.colkey;
+    (byCol[k] = byCol[k] || []).push(el);
+  });
+  Object.values(byCol).forEach(list => {
+    if (list.length < 2) return;
+    list.sort((a,b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+    const color = list[0].style.getPropertyValue('--uc') || 'var(--gold)';
+    for (let i = 0; i < list.length - 1; i++){
+      const ra = list[i].getBoundingClientRect(), rb = list[i+1].getBoundingClientRect();
+      const x = ra.left - boardRect.left + ra.width/2;
+      const y1 = ra.bottom - boardRect.top;
+      const y2 = rb.top - boardRect.top;
+      const spine = document.createElementNS('http://www.w3.org/2000/svg','line');
+      spine.setAttribute('x1', x); spine.setAttribute('y1', y1);
+      spine.setAttribute('x2', x); spine.setAttribute('y2', y2);
+      spine.setAttribute('stroke', color);
+      spine.setAttribute('stroke-width', '2');
+      spine.setAttribute('opacity', '0.4');
+      svg.appendChild(spine);
+      any = true;
+    }
+  });
+
+  // ── Liens manuels (créés par l'admin) : partent toujours du bas de A,
+  // et ne voyagent que dans les couloirs vides entre lignes/colonnes de la grille ──
   links.forEach((l, i) => {
     const elA = board.querySelector(`[data-card="${l.a}"]`);
     const elB = board.querySelector(`[data-card="${l.b}"]`);
     if (!elA || !elB) return;
     any = true;
     const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
-    const sameColumn = Math.abs(ra.left - rb.left) < 5;
-    const y1 = ra.top - boardRect.top + ra.height/2;
-    const y2 = rb.top - boardRect.top + rb.height/2;
-    let x1, x2, midX;
 
-    if (sameColumn){
-      // Même colonne : on sort par la droite des deux cartes et on boucle par l'extérieur
-      const key = 'r' + Math.round(ra.left);
-      sideOffsets[key] = (sideOffsets[key] || 0) + 1;
-      const bulge = 22 + (sideOffsets[key] % 3) * 10;
-      x1 = ra.right - boardRect.left;
-      x2 = rb.right - boardRect.left;
-      midX = Math.max(x1, x2) + bulge;
-    } else if (rb.left > ra.left){
-      // B est dans une colonne à droite de A
-      x1 = ra.right - boardRect.left;
-      x2 = rb.left - boardRect.left;
-      midX = (x1 + x2) / 2;
-    } else {
-      // B est dans une colonne à gauche de A
-      x1 = ra.left - boardRect.left;
-      x2 = rb.right - boardRect.left;
-      midX = (x1 + x2) / 2;
-    }
+    const x1 = ra.left - boardRect.left + ra.width/2;
+    const y1 = ra.bottom - boardRect.top; // sort toujours par le bas de A
+
+    const aMidY = ra.top + ra.height/2, bMidY = rb.top + rb.height/2;
+    const bBelow = bMidY > aMidY;
+    const x2 = rb.left - boardRect.left + rb.width/2;
+    const y2 = (bBelow ? rb.top : rb.bottom) - boardRect.top; // entre par le côté qui fait face à A
+
+    // Couloir vertical : dans l'espace entre colonnes, jamais sur une carte
+    const spaceRight = boardRect.right - ra.right;
+    const goRight = spaceRight > 18;
+    const fan = (i % 3 - 1) * 5; // écarte légèrement les liens qui partagent le même couloir
+    const laneX = (goRight ? (ra.right - boardRect.left + 10) : (ra.left - boardRect.left - 10)) + fan;
+
+    const gapDrop = 6;
+    const y1b = y1 + gapDrop;
+    const y2b = bBelow ? y2 - gapDrop : y2 + gapDrop;
 
     const isSequel = l.type !== 'reference';
+    const colorA = elA.style.getPropertyValue('--uc') || '#C9973A';
+    const markerId = 'arrow-' + i;
+    if (isSequel) ensureArrowMarker(colorA, markerId);
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d', `M${x1},${y1} L${midX},${y1} L${midX},${y2} L${x2},${y2}`);
+    path.setAttribute('d', `M${x1},${y1} L${x1},${y1b} L${laneX},${y1b} L${laneX},${y2b} L${x2},${y2b} L${x2},${y2}`);
     path.setAttribute('stroke-linejoin', 'round');
-    path.setAttribute('stroke', 'var(--gold)');
+    path.setAttribute('stroke', colorA);
     path.setAttribute('stroke-width', isSequel ? '2' : '1.3');
     path.setAttribute('fill', 'none');
     if (!isSequel) path.setAttribute('stroke-dasharray', '4 3');
-    path.setAttribute('opacity', isSequel ? '0.85' : '0.5');
-    if (isSequel) path.setAttribute('marker-end', 'url(#linkArrow)');
+    path.setAttribute('opacity', isSequel ? '0.9' : '0.55');
+    if (isSequel) path.setAttribute('marker-end', `url(#${markerId})`);
     svg.appendChild(path);
 
     const labelText = l.label || (isSequel ? 'Suite' : '');
     if (labelText){
       const text = document.createElementNS('http://www.w3.org/2000/svg','text');
-      text.setAttribute('x', midX);
-      text.setAttribute('y', (y1+y2)/2 - 4);
+      text.setAttribute('x', laneX);
+      text.setAttribute('y', (y1b+y2b)/2 - 3);
       text.setAttribute('text-anchor','middle');
       text.setAttribute('class','link-label');
       text.textContent = labelText;
