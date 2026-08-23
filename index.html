@@ -1475,6 +1475,12 @@ function navList(){
     const cur = catalog.find(d => d.id === currentDetailId);
     if (cur) return list.filter(d => d.studio === cur.studio);
   }
+  if (currentView === 'tier' && currentDetailId){
+    const rating = progress[currentDetailId]?.rating;
+    if (!rating) return [];
+    return list.filter(d => progress[d.id]?.rating === rating)
+      .sort((a,b) => (progress[a.id]?.tierPos ?? 9999) - (progress[b.id]?.tierPos ?? 9999));
+  }
   return list;
 }
 
