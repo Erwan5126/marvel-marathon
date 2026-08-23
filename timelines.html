@@ -51,26 +51,20 @@ button{font-family:inherit}
 .mini-btn{padding:5px 12px;border-radius:14px;border:1px solid var(--gold);background:transparent;color:var(--gold);font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap}
 
 .board-wrap{overflow-x:auto;overflow-y:hidden;padding:20px 16px 40px;position:relative}
-.board{display:flex;gap:20px;position:relative;min-height:200px}
-.uni-col{width:200px;flex-shrink:0}
+.board{display:grid;grid-auto-flow:row;column-gap:20px;row-gap:10px;position:relative;grid-template-columns:44px repeat(var(--n-uni,1), 200px)}
 @media (min-width:900px){
   .board-wrap{overflow-x:hidden}
-  .board{width:100%}
-  .uni-col{width:auto;flex:1 1 0;min-width:0}
+  .board{grid-template-columns:44px repeat(var(--n-uni,1), 1fr)}
 }
-.uni-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid}
+.year-label{grid-column:1;display:flex;align-items:flex-start;justify-content:center;padding-top:2px;font-family:'Bebas Neue',sans-serif;font-size:13px;color:var(--muted);border-right:1px solid var(--border)}
+.uni-head{grid-row:1;display:flex;align-items:center;gap:8px;padding-bottom:8px;border-bottom:2px solid}
 .uni-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .uni-name{font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:.5px}
-.uni-trunk{display:flex;flex-direction:column;gap:10px}
-.uni-branches{display:flex;gap:14px;margin-top:10px}
-.uni-branch{flex:1;display:flex;flex-direction:column;gap:10px;position:relative;padding-top:16px}
-.uni-branch::before{content:'';position:absolute;top:0;left:50%;width:1px;height:16px;background:var(--border)}
-.branch-label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center;margin-bottom:2px}
+.branch-head{grid-row:1;display:flex;align-items:flex-end;gap:4px;padding-bottom:8px;border-bottom:1px dashed}
+.branch-head-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;line-height:1.2}
+
 
 .tcard{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;cursor:pointer;position:relative;font-size:11px}
-.tcard.dragging{opacity:.5;border-color:var(--gold);cursor:grabbing}
-.tcard-drag{position:absolute;bottom:2px;right:4px;font-size:13px;color:var(--muted);cursor:grab;touch-action:none;padding:5px;line-height:1}
-.tcard-drag:active{color:var(--gold)}
 .tcard.watched{border-left:3px solid var(--uc, var(--red))}
 .tcard-title{font-weight:500;line-height:1.3;margin-bottom:2px;padding-right:16px}
 .tcard.has-assign .tcard-title{padding-left:16px}
@@ -139,10 +133,6 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 </div>
 
 <div class="controls">
-  <div class="segmented" id="sortToggle">
-    <button class="on" onclick="setSort('chrono')">Chronologique</button>
-    <button onclick="setSort('release')">Ordre de sortie</button>
-  </div>
   <div class="segmented" id="filterToggle">
     <button class="on" onclick="setFilter('all')">Tout le catalogue</button>
     <button onclick="setFilter('mine')">Mon marathon</button>
@@ -196,7 +186,6 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   <div class="modal">
     <div class="modal-title" id="assignTitle">Assigner</div>
     <div class="field"><label>Univers</label><select id="assignUniverse"></select></div>
-    <div class="field"><label>Position chronologique (nombre, ordre libre)</label><input type="number" id="assignOrder" placeholder="ex: 10"></div>
     <div class="field"><label>Branche (optionnel — laisser vide si tronc commun)</label><input type="text" id="assignBranch" placeholder="ex: Branche originale"></div>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('assignOverlay')">Annuler</button>
@@ -271,7 +260,6 @@ let universes = [];
 let links = [];
 let progress = {};
 let isAdmin = false;
-let sortMode = 'chrono'; // 'chrono' | 'release'
 let filterMode = 'all'; // 'all' | 'mine'
 let currentDetailId = null;
 
@@ -344,11 +332,6 @@ function toggleWatchedFor(id){
 }
 
 // ── Réglages ──
-function setSort(mode){
-  sortMode = mode;
-  document.querySelectorAll('#sortToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='chrono')||(i===1&&mode==='release')));
-  renderBoard();
-}
 function setFilter(mode){
   filterMode = mode;
   document.querySelectorAll('#filterToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='all')||(i===1&&mode==='mine')));
@@ -356,7 +339,7 @@ function setFilter(mode){
 }
 
 // ── Rendu de la frise ──
-function fmtYear(d){ return d.year || ''; }
+function fmtYear(d){ return d.year || (d.releaseDate||'').slice(0,4) || ''; }
 
 function renderBoard(){
   const board = document.getElementById('board');
@@ -368,43 +351,73 @@ function renderBoard(){
   let items = catalog.filter(d => d.universe);
   if (filterMode === 'mine') items = items.filter(d => isIncluded(d.id));
 
-  board.innerHTML = universes.map(u => {
-    const uItems = items.filter(d => d.universe === u.id);
-    const trunk = uItems.filter(d => !d.branch);
-    const branchNames = [...new Set(uItems.filter(d => d.branch).map(d => d.branch))];
-    const sortFn = sortMode === 'chrono'
-      ? (a,b) => (a.chronoOrder ?? 9999) - (b.chronoOrder ?? 9999)
-      : (a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||'');
-    trunk.sort(sortFn);
-    return `
-      <div class="uni-col" data-uni="${u.id}">
-        <div class="uni-head" style="border-color:${u.color}">
-          <div class="uni-dot" style="background:${u.color}"></div>
-          <div class="uni-name">${u.name}</div>
-        </div>
-        <div class="uni-trunk" style="padding-top:${u.offset||0}px">${trunk.map(d => cardHtml(d, u.color)).join('')}</div>
-        ${branchNames.length ? `<div class="uni-branches">
-          ${branchNames.map(bn => {
-            const bItems = uItems.filter(d => d.branch === bn).sort(sortFn);
-            return `<div class="uni-branch"><div class="branch-label">${bn}</div>${bItems.map(d => cardHtml(d, u.color)).join('')}</div>`;
-          }).join('')}
-        </div>` : ''}
-      </div>`;
-  }).join('');
+  const yearOf = d => fmtYear(d) || '?';
+  const dateSort = (a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||'');
+
+  // Construit la liste des colonnes : tronc de chaque univers, suivi de ses branches
+  const columns = [];
+  universes.forEach(u => {
+    columns.push({ type:'trunk', u, key:u.id });
+    const bNames = [...new Set(items.filter(d => d.universe===u.id && d.branch).map(d=>d.branch))];
+    bNames.forEach(bn => columns.push({ type:'branch', u, branchName:bn, key:u.id+'::'+bn }));
+  });
+  const itemsOfColumn = col => col.type==='trunk'
+    ? items.filter(d => d.universe===col.u.id && !d.branch)
+    : items.filter(d => d.universe===col.u.id && d.branch===col.branchName);
+
+  // Années réellement présentes (toutes colonnes confondues), triées
+  const years = [...new Set(items.map(yearOf))].filter(y => y !== '?').sort();
+
+  // Nombre de lignes réservées par année = le plus grand nombre de sorties
+  // qu'une même colonne (tronc ou branche) a cette année-là
+  const yearRowCount = {};
+  years.forEach(y => {
+    let max = 1;
+    columns.forEach(col => {
+      const c = itemsOfColumn(col).filter(d => yearOf(d)===y).length;
+      if (c > max) max = c;
+    });
+    yearRowCount[y] = max;
+  });
+  let cum = 0;
+  const yearRowStart = {};
+  years.forEach(y => { yearRowStart[y] = cum; cum += yearRowCount[y]; });
+
+  document.getElementById('board').style.setProperty('--n-uni', columns.length);
+
+  let html = '';
+  years.forEach(y => {
+    html += `<div class="year-label" style="grid-row:${2+yearRowStart[y]} / span ${yearRowCount[y]}">${y}</div>`;
+  });
+  columns.forEach((col, ci) => {
+    const gcol = ci + 2; // colonne 1 = étiquettes d'années
+    if (col.type === 'trunk'){
+      html += `<div class="uni-head" style="grid-column:${gcol};border-color:${col.u.color}"><div class="uni-dot" style="background:${col.u.color}"></div><div class="uni-name">${col.u.name}</div></div>`;
+    } else {
+      html += `<div class="branch-head" style="grid-column:${gcol};border-color:${col.u.color}"><span class="branch-head-label" style="color:${col.u.color}">↳ ${col.branchName}</span></div>`;
+    }
+    const colItems = itemsOfColumn(col);
+    years.forEach(y => {
+      const yItems = colItems.filter(d => yearOf(d) === y).sort(dateSort);
+      yItems.forEach((d, idx) => {
+        const row = 2 + yearRowStart[y] + idx;
+        html += cardHtml(d, col.u.color, gcol, row);
+      });
+    });
+  });
+  board.innerHTML = html;
 
   requestAnimationFrame(drawLinks);
 }
 
-function cardHtml(d, color){
+function cardHtml(d, color, col, row){
   const p = progress[d.id] || {};
-  const showDrag = isAdmin && sortMode === 'chrono';
   return `
-    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d.id}" style="--uc:${color}" onclick="openDetail('${d.id}')">
+    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d.id}" style="--uc:${color};grid-column:${col};grid-row:${row}" onclick="openDetail('${d.id}')">
       ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d.id}')" title="Assigner">⚙</span>` : ''}
       <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d.id}')">${p.watched?'✓':''}</div>
       <div class="tcard-title">${d.title}</div>
       <div class="tcard-meta">${fmtYear(d)} · ${d.type||''}</div>
-      ${showDrag ? '<span class="tcard-drag" title="Glisser pour réordonner">⠿</span>' : ''}
     </div>`;
 }
 
@@ -498,46 +511,6 @@ function drawLinks(){
 }
 window.addEventListener('resize', () => requestAnimationFrame(drawLinks));
 
-// ── Glisser-déposer pour réordonner (tri Chronologique, admin) ──
-let dragEl = null, dragContainer = null;
-(function initDragReorder(){
-  const board = document.getElementById('board');
-  board.addEventListener('pointerdown', e => {
-    const handle = e.target.closest('.tcard-drag');
-    if (!handle) return;
-    e.preventDefault();
-    dragEl = handle.closest('.tcard');
-    dragContainer = dragEl.parentElement;
-    dragEl.setPointerCapture(e.pointerId);
-    dragEl.classList.add('dragging');
-  });
-  board.addEventListener('pointermove', e => {
-    if (!dragEl) return;
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    const overCard = target && target.closest('.tcard');
-    if (overCard && overCard !== dragEl && overCard.parentElement === dragContainer){
-      const rect = overCard.getBoundingClientRect();
-      const before = e.clientY < rect.top + rect.height/2;
-      dragContainer.insertBefore(dragEl, before ? overCard : overCard.nextSibling);
-    }
-  });
-  board.addEventListener('pointerup', async e => {
-    if (!dragEl) return;
-    dragEl.classList.remove('dragging');
-    const container = dragContainer;
-    dragEl = null; dragContainer = null;
-    const ids = [...container.querySelectorAll('.tcard')].map(el => el.dataset.card);
-    const batch = db.batch();
-    ids.forEach((id, i) => batch.update(db.collection('catalog').doc(id), { chronoOrder: (i+1)*10 }));
-    try { await batch.commit(); requestAnimationFrame(drawLinks); }
-    catch(err){ alert('Erreur : ' + err.message); }
-  });
-  board.addEventListener('pointercancel', () => {
-    if (dragEl) dragEl.classList.remove('dragging');
-    dragEl = null; dragContainer = null;
-  });
-})();
-
 // ── Gestion des univers (admin) ──
 function openUniverseMgr(){ renderUniverseMgr(); document.getElementById('universeMgrOverlay').classList.add('open'); }
 function renderUniverseMgr(){
@@ -550,20 +523,15 @@ function renderUniverseMgr(){
       </div>
       <input type="color" value="${u.color}" onchange="recolorUniverse('${u.id}', this.value)">
       <input type="text" value="${u.name}" onchange="renameUniverse('${u.id}', this.value)">
-      <input type="number" value="${u.offset||0}" title="Décalage vertical (px)" style="width:56px;padding:6px 4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px" onchange="setUniverseOffset('${u.id}', this.value)">
       <button class="unimgr-del" onclick="deleteUniverse('${u.id}','${u.name.replace(/'/g,"\\'")}')">🗑</button>
     </div>`).join('') || '<div class="empty-msg">Aucun univers.</div>';
-}
-function setUniverseOffset(id, value){
-  const px = Math.max(0, Number(value) || 0);
-  db.collection('universes').doc(id).update({ offset: px });
 }
 function addUniverse(){
   const name = document.getElementById('newUniName').value.trim();
   const color = document.getElementById('newUniColor').value;
   if (!name) return;
   const order = universes.length;
-  db.collection('universes').add({ name, color, order, offset: 0 }).then(() => { document.getElementById('newUniName').value=''; });
+  db.collection('universes').add({ name, color, order }).then(() => { document.getElementById('newUniName').value=''; });
 }
 function recolorUniverse(id, color){ db.collection('universes').doc(id).update({ color }); }
 function renameUniverse(id, name){ name=name.trim(); if(name) db.collection('universes').doc(id).update({ name }); }
@@ -584,7 +552,7 @@ async function deleteUniverse(id, name){
     : `Supprimer l'univers "${name}" ?`;
   if (!confirm(msg)) return;
   const batch = db.batch();
-  affected.forEach(d => batch.update(db.collection('catalog').doc(d.id), { universe: firebase.firestore.FieldValue.delete(), chronoOrder: firebase.firestore.FieldValue.delete(), branch: firebase.firestore.FieldValue.delete() }));
+  affected.forEach(d => batch.update(db.collection('catalog').doc(d.id), { universe: firebase.firestore.FieldValue.delete(), branch: firebase.firestore.FieldValue.delete() }));
   batch.delete(db.collection('universes').doc(id));
   await batch.commit();
 }
@@ -598,18 +566,15 @@ function openAssign(id){
   document.getElementById('assignTitle').textContent = d.title;
   document.getElementById('assignUniverse').innerHTML = '<option value="">— Aucun —</option>' + universes.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
   document.getElementById('assignUniverse').value = d.universe || '';
-  document.getElementById('assignOrder').value = d.chronoOrder ?? '';
   document.getElementById('assignBranch').value = d.branch || '';
   document.getElementById('assignOverlay').classList.add('open');
 }
 function saveAssign(){
   if (!assigningId) return;
   const universe = document.getElementById('assignUniverse').value;
-  const orderVal = document.getElementById('assignOrder').value;
   const branch = document.getElementById('assignBranch').value.trim();
   const update = {};
   update.universe = universe ? universe : firebase.firestore.FieldValue.delete();
-  update.chronoOrder = orderVal !== '' ? Number(orderVal) : firebase.firestore.FieldValue.delete();
   update.branch = branch ? branch : firebase.firestore.FieldValue.delete();
   db.collection('catalog').doc(assigningId).update(update)
     .then(() => closeOverlay('assignOverlay'))
