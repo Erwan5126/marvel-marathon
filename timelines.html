@@ -76,6 +76,7 @@ button{font-family:inherit}
 .myear:first-child{margin-top:0}
 .mlist-item{margin-bottom:10px}
 .mlink-badge{margin-top:6px;font-size:10px;padding:5px 9px;border-radius:8px;background:var(--bg3);color:var(--gold);display:flex;align-items:center;gap:5px;cursor:pointer;font-weight:500}
+#detailLinks{margin:6px 0 12px}
 .mlink-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 
 .tcard{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px;cursor:pointer;position:relative;font-size:11px}
@@ -133,7 +134,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .bulk-actions{display:flex;gap:6px;margin-bottom:4px}
 .bulk-mini-btn{font-size:10px;padding:3px 9px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
 
-.detail-poster{width:100%;max-height:340px;object-fit:contain;border-radius:10px;margin-bottom:12px;background:#000}
+.detail-poster{max-width:100%;width:auto;max-height:340px;height:auto;border-radius:10px;margin:0 auto 12px;display:block}
 .detail-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;margin-bottom:6px}
 .detail-meta{font-size:11px;color:var(--muted);margin-bottom:14px}
 /* ── Export PDF (impression navigateur) ── */
@@ -285,6 +286,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <img class="detail-poster" id="detailPoster">
     <div class="detail-title" id="detailTitle"></div>
     <div class="detail-meta" id="detailMeta"></div>
+    <div id="detailLinks"></div>
     <div class="btn-row">
       <button class="btn btn-primary" id="detailWatchBtn" onclick="toggleDetailWatched()"></button>
       <button class="btn btn-secondary" id="detailAssignBtn" style="display:none" onclick="openAssignFromDetail()">Assigner</button>
@@ -951,6 +953,16 @@ function openDetail(id){
   document.getElementById('detailAssignBtn').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailPrevBtn').disabled = !navPrevOf[id];
   document.getElementById('detailNextBtn').disabled = !navNextOf[id];
+
+  const relLinks = links.filter(l => l.a===id || l.b===id);
+  document.getElementById('detailLinks').innerHTML = relLinks.map(l => {
+    const otherId = l.a===id ? l.b : l.a;
+    const other = catalog.find(x => x.id === otherId);
+    if (!other) return '';
+    const label = l.label || (l.type==='reference' ? 'Référence' : 'Suite');
+    return `<div class="mlink-badge" onclick="openDetail('${otherId}')">🔗 ${label} : ${other.title}</div>`;
+  }).join('');
+
   document.getElementById('detailOverlay').classList.add('open');
 }
 function detailNav(dir){
