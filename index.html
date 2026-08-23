@@ -1351,6 +1351,7 @@ function initTierDrag(){
     if (row.dataset.dragInit) return;
     row.dataset.dragInit = '1';
     row.addEventListener('pointerdown', e => {
+      if (e.target.closest('.tier-card-nav')) return; // ne pas capturer le pointeur sur les flèches ‹ ›
       const card = e.target.closest('.tier-card');
       if (!card) return;
       tierDragEl = card;
