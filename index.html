@@ -751,7 +751,7 @@ function openAssignFromDetail(){
 // FIRESTORE — studios (lecture publique, écriture admin only)
 // ═══════════════════════════════════════════════════════════════
 function listenStudios(){
-  db.collection('studios').orderBy('name').onSnapshot(snap => {
+  db.collection('studios').orderBy('order').onSnapshot(snap => {
     studios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     if (studios.length === 0 && isAdmin) seedDefaultStudios();
     Object.keys(STUDIOS).forEach(k => delete STUDIOS[k]);
@@ -767,7 +767,7 @@ function seedDefaultStudios(){
     {name:'Marvel Fox', color:'#E67E22'}, {name:'Marvel Sony', color:'#9B59B6'}, {name:'Autres', color:'#888888'}
   ];
   const batch = db.batch();
-  defaults.forEach(s => batch.set(db.collection('studios').doc(), s));
+  defaults.forEach((s, i) => batch.set(db.collection('studios').doc(), { ...s, order: i }));
   batch.commit().catch(err => console.error('Seed studios erreur', err));
 }
 
@@ -779,19 +779,35 @@ function openStudioMgr(){
 function renderStudioMgr(){
   const box = document.getElementById('studioMgrList');
   if (!box) return;
-  box.innerHTML = studios.map(s => `
+  box.innerHTML = studios.map((s,i) => `
     <div class="studiomgr-row">
+      <div class="unimgr-order">
+        <button onclick="moveStudio('${s.id}',-1)" ${i===0?'disabled':''}>▲</button>
+        <button onclick="moveStudio('${s.id}',1)" ${i===studios.length-1?'disabled':''}>▼</button>
+      </div>
       <input type="color" value="${s.color}" onchange="recolorStudio('${s.id}', this.value)">
       <input type="text" value="${s.name}" onchange="renameStudio('${s.id}', '${s.name.replace(/'/g,"\\'")}', this.value)">
       <button class="studiomgr-del" onclick="deleteStudio('${s.id}', '${s.name.replace(/'/g,"\\'")}')">🗑</button>
     </div>`).join('') || '<div class="empty-msg">Aucun studio pour l\'instant.</div>';
 }
 
+async function moveStudio(id, dir){
+  const idx = studios.findIndex(s => s.id === id);
+  const swapIdx = idx + dir;
+  if (swapIdx < 0 || swapIdx >= studios.length) return;
+  const a = studios[idx], b = studios[swapIdx];
+  const batch = db.batch();
+  batch.update(db.collection('studios').doc(a.id), { order: b.order });
+  batch.update(db.collection('studios').doc(b.id), { order: a.order });
+  await batch.commit().catch(err => alert('Erreur : ' + err.message));
+}
+
 function addStudio(){
   const name = document.getElementById('newStudioName').value.trim();
   const color = document.getElementById('newStudioColor').value;
   if (!name) return;
-  db.collection('studios').add({ name, color }).then(() => {
+  const order = studios.length;
+  db.collection('studios').add({ name, color, order }).then(() => {
     document.getElementById('newStudioName').value = '';
   }).catch(err => alert('Erreur : ' + err.message));
 }
@@ -1187,7 +1203,9 @@ function render(){
   if (currentScope === 'manage'){
     const byStudio = {};
     list.forEach(d => { (byStudio[d.studio] = byStudio[d.studio]||[]).push(d); });
-    main.innerHTML = Object.entries(byStudio).map(([studio, items]) => {
+    const orderedStudioNames = [...studios.map(s=>s.name), ...Object.keys(byStudio).filter(n => !studios.some(s=>s.name===n))];
+    main.innerHTML = orderedStudioNames.filter(studio => byStudio[studio]).map(studio => {
+      const items = byStudio[studio];
       const incCount = items.filter(d => isIncluded(d.id)).length;
       return `
         <div class="studio-section">
@@ -1208,7 +1226,9 @@ function render(){
   } else {
     const byStudio = {};
     list.forEach(d => { (byStudio[d.studio] = byStudio[d.studio]||[]).push(d); });
-    main.innerHTML = Object.entries(byStudio).map(([studio, items]) => {
+    const orderedStudioNames = [...studios.map(s=>s.name), ...Object.keys(byStudio).filter(n => !studios.some(s=>s.name===n))];
+    main.innerHTML = orderedStudioNames.filter(studio => byStudio[studio]).map(studio => {
+      const items = byStudio[studio];
       const seen = items.filter(d => progress[d.id]?.watched).length;
       const pct = Math.round(seen/items.length*100);
       return `
