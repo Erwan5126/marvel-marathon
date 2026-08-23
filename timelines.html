@@ -183,13 +183,17 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 <!-- Connexion admin -->
 <div class="overlay" id="loginOverlay">
   <div class="modal">
-    <div class="modal-title">Connexion admin</div>
+    <div class="segmented" style="margin-bottom:14px">
+      <button class="on" id="loginTabSignin" onclick="setLoginTab('signin')">Se connecter</button>
+      <button id="loginTabSignup" onclick="setLoginTab('signup')">Créer un compte</button>
+    </div>
     <div class="field"><label>Email</label><input type="email" id="loginEmail"></div>
+    <div class="field" id="loginNameField" style="display:none"><label>Pseudo (affiché aux autres)</label><input type="text" id="loginName" placeholder="ex: Erwan"></div>
     <div class="field"><label>Mot de passe</label><input type="password" id="loginPass"></div>
     <div id="loginError" style="color:var(--red);font-size:12px;margin-bottom:8px;display:none"></div>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('loginOverlay')">Annuler</button>
-      <button class="btn btn-primary" onclick="doLogin()">Connexion</button>
+      <button class="btn btn-primary" id="loginSubmitBtn" onclick="doLogin()">Connexion</button>
     </div>
   </div>
 </div>
@@ -298,25 +302,73 @@ let currentDetailId = null;
 auth.onAuthStateChanged(user => {
   if (!user) { auth.signInAnonymously().catch(console.error); return; }
   isAdmin = user.uid === ADMIN_UID;
-  document.getElementById('adminBtn').textContent = isAdmin ? '★ Admin' : 'Visiteur';
   document.getElementById('adminBtn').classList.toggle('active', isAdmin);
   document.getElementById('adminTools').style.display = isAdmin ? 'flex' : 'none';
+  if (isAdmin){
+    document.getElementById('adminBtn').textContent = '★ Admin';
+  } else if (!user.isAnonymous){
+    db.collection('progress').doc(user.uid).get().then(doc => {
+      const name = doc.exists ? doc.data().displayName : null;
+      document.getElementById('adminBtn').textContent = name || 'Connecté';
+    });
+  } else {
+    document.getElementById('adminBtn').textContent = 'Visiteur';
+  }
   listenCatalog();
   listenUniverses();
   listenLinks();
   listenProgress(user.uid);
 });
 
+let loginMode = 'signin';
+function setLoginTab(mode){
+  loginMode = mode;
+  document.getElementById('loginTabSignin').classList.toggle('on', mode==='signin');
+  document.getElementById('loginTabSignup').classList.toggle('on', mode==='signup');
+  document.getElementById('loginNameField').style.display = mode==='signup' ? 'block' : 'none';
+  document.getElementById('loginSubmitBtn').textContent = mode==='signup' ? 'Créer le compte' : 'Connexion';
+  document.getElementById('loginError').style.display = 'none';
+}
 function openLogin(){
-  if (isAdmin) { auth.signOut(); return; }
+  if (isAdmin || (auth.currentUser && !auth.currentUser.isAnonymous)) { auth.signOut(); return; }
+  setLoginTab('signin');
   document.getElementById('loginOverlay').classList.add('open');
 }
 function doLogin(){
   const email = document.getElementById('loginEmail').value;
   const pass = document.getElementById('loginPass').value;
+  const e = document.getElementById('loginError');
+  e.style.display = 'none';
+
+  if (loginMode === 'signup'){
+    const name = document.getElementById('loginName').value.trim();
+    if (!name) { e.textContent = 'Choisis un pseudo.'; e.style.display = 'block'; return; }
+    const credential = firebase.auth.EmailAuthProvider.credential(email, pass);
+    const current = auth.currentUser;
+    const finish = (user) => {
+      db.collection('progress').doc(user.uid).set({ displayName: name }, { merge:true })
+        .then(() => closeOverlay('loginOverlay'));
+    };
+    if (current && current.isAnonymous){
+      current.linkWithCredential(credential)
+        .then(res => finish(res.user))
+        .catch(err => {
+          e.textContent = err.code === 'auth/email-already-in-use'
+            ? 'Un compte existe déjà avec cet email — connecte-toi plutôt.'
+            : "Erreur : " + err.message;
+          e.style.display = 'block';
+        });
+    } else {
+      auth.createUserWithEmailAndPassword(email, pass)
+        .then(res => finish(res.user))
+        .catch(err => { e.textContent = "Erreur : " + err.message; e.style.display = 'block'; });
+    }
+    return;
+  }
+
   auth.signInWithEmailAndPassword(email, pass)
     .then(() => closeOverlay('loginOverlay'))
-    .catch(() => { const e=document.getElementById('loginError'); e.textContent='Identifiants incorrects.'; e.style.display='block'; });
+    .catch(() => { e.textContent='Identifiants incorrects.'; e.style.display='block'; });
 }
 function closeOverlay(id){ document.getElementById(id).classList.remove('open'); }
 
