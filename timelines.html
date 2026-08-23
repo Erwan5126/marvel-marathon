@@ -132,6 +132,23 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .detail-poster{width:100%;max-height:280px;object-fit:cover;border-radius:10px;margin-bottom:12px;background:#333}
 .detail-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;margin-bottom:6px}
 .detail-meta{font-size:11px;color:var(--muted);margin-bottom:14px}
+/* ── Export PDF (impression navigateur) ── */
+@media print{
+  @page{ size: A3 landscape; margin: 10mm; }
+  body{ overflow: visible !important; background:#fff !important; color:#111 !important; }
+  .header, .controls, .mobile-tabs, .mobile-list, .overlay, #exportPdfBtn{ display:none !important; }
+  .board-wrap{
+    display:block !important; overflow: visible !important; height:auto !important; padding:0 !important;
+  }
+  .board{ position: relative; }
+  .uni-head, .branch-head, .year-label{ position: static !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .tcard, .uni-head, .branch-head, .col-bg{
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .tcard{ break-inside: avoid; }
+  .links-svg{ -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
 </style>
 </head>
 <body>
@@ -151,6 +168,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <button class="on" onclick="setFilter('all')">Tout le catalogue</button>
     <button onclick="setFilter('mine')">Mon marathon</button>
   </div>
+  <button class="mini-btn" id="exportPdfBtn" onclick="window.print()" title="Ouvre la boîte de dialogue d'impression : choisis 'Enregistrer en PDF'">🖨 Exporter en PDF</button>
   <div class="admin-tools" id="adminTools" style="display:none">
     <button class="mini-btn" onclick="openUniverseMgr()">⚙ Univers</button>
     <button class="mini-btn" onclick="openBulkAssignPicker()">📌 Affecter des programmes</button>
