@@ -105,6 +105,18 @@ button{font-family:inherit}
 .card.watched .card-check{background:var(--red);border-color:var(--red);color:#fff}
 .card-stars{display:flex;gap:1px;margin-top:4px}
 .star{font-size:11px;color:var(--border);cursor:pointer}
+
+.tier-row{display:flex;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden;min-height:96px}
+.tier-label{width:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:26px;color:#fff}
+.tier-cards{flex:1;display:flex;gap:8px;padding:8px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tier-card{width:88px;flex-shrink:0;cursor:grab;position:relative;touch-action:none}
+.tier-card.dragging{opacity:.4}
+.tier-card img{width:100%;aspect-ratio:2/3;object-fit:cover;border-radius:6px;background:#333;display:block;border:2px solid transparent}
+.tier-card-title{font-size:9px;margin-top:3px;line-height:1.2;text-align:center;color:var(--muted)}
+.tier-empty{font-size:10px;color:var(--muted);padding:0 8px;display:flex;align-items:center}
+.rate10{display:flex;gap:4px;flex-wrap:wrap}
+.rate10 button{width:26px;height:26px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--muted);font-size:11px;cursor:pointer;font-weight:600}
+.rate10 button.lit{background:var(--gold);border-color:var(--gold);color:#111}
 .star.lit{color:var(--gold)}
 
 .mosaic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
@@ -255,6 +267,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="view-icons">
       <button class="icon-toggle on" title="Vue par studios" onclick="setView('studio',this)">☰</button>
       <button class="icon-toggle" title="Vue mosaïque" onclick="setView('mosaic',this)">▦</button>
+      <button class="icon-toggle" title="Tier List" onclick="setView('tier',this)">🏆</button>
     </div>
   </div>
   <div class="controls-row">
@@ -368,9 +381,9 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 
       <div id="detailEpisodes" style="display:none"></div>
 
-      <div class="detail-rating-row">
+      <div class="detail-rating-row" style="flex-direction:column;align-items:flex-start;gap:8px">
         <span class="detail-rating-label">Ma note</span>
-        <div class="card-stars" id="detailStars" style="font-size:19px;gap:4px"></div>
+        <div class="rate10" id="detailStars"></div>
       </div>
     </div>
   </div>
@@ -1223,6 +1236,8 @@ function render(){
     }).join('');
   } else if (currentView === 'mosaic'){
     main.innerHTML = `<div class="mosaic-grid">${list.map(cardMosaic).join('')}</div>`;
+  } else if (currentView === 'tier'){
+    renderTierList(list, main);
   } else {
     const byStudio = {};
     list.forEach(d => { (byStudio[d.studio] = byStudio[d.studio]||[]).push(d); });
@@ -1252,14 +1267,14 @@ function toggleCollapse(s){ collapsed[s] = !collapsed[s]; render(); }
 
 function cardItem(d){
   const p = progress[d.id] || {};
-  const stars = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="event.stopPropagation();setRatingFor('${d.id}',${n})">★</span>`).join('');
+  const ratingBadge = p.rating ? `<div class="card-stars" style="color:var(--gold);font-size:10px;font-weight:600">⭐ ${p.rating}/10</div>` : '';
   return `
     <div class="card ${p.watched?'watched':''}" onclick="openDetail('${d.id}')">
       <div class="card-check" onclick="event.stopPropagation();toggleWatchedFor('${d.id}')">${p.watched?'✓':''}</div>
       <div class="card-studio">${d.type}</div>
       <div class="card-title">${d.title}</div>
       <div class="card-meta">${d.year || ''} ${d.duration ? '· '+fmtDuration(d.duration, d.episodes) : ''}</div>
-      <div class="card-stars">${stars}</div>
+      ${ratingBadge}
     </div>`;
 }
 
@@ -1270,6 +1285,73 @@ function cardMosaic(d){
       ${d.poster ? `<img src="${d.poster}">` : `<div class="mosaic-item-ph">${d.title}</div>`}
       ${p.watched ? '<div class="mosaic-check">✓</div>' : ''}
     </div>`;
+}
+
+// ── Tier List : 10 rangs (S à I), alimentés automatiquement par la note (1-10),
+// avec glisser-déposer pour affiner l'ordre à l'intérieur d'un même rang ──
+const TIERS = [
+  {n:10,label:'S',color:'#E23636'}, {n:9,label:'A',color:'#E67E22'}, {n:8,label:'B',color:'#C9973A'},
+  {n:7,label:'C',color:'#F1C40F'}, {n:6,label:'D',color:'#2ECC71'}, {n:5,label:'E',color:'#1ABC9C'},
+  {n:4,label:'F',color:'#3A7BD5'}, {n:3,label:'G',color:'#5B5FC7'}, {n:2,label:'H',color:'#9B59B6'},
+  {n:1,label:'I',color:'#7F8C8D'}
+];
+
+function renderTierList(list, main){
+  main.innerHTML = TIERS.map(t => {
+    const items = list.filter(d => progress[d.id]?.rating === t.n)
+      .sort((a,b) => (progress[a.id]?.tierPos ?? 9999) - (progress[b.id]?.tierPos ?? 9999));
+    return `
+      <div class="tier-row">
+        <div class="tier-label" style="background:${t.color}">${t.label}</div>
+        <div class="tier-cards" data-tier="${t.n}">
+          ${items.length ? items.map(d => `
+            <div class="tier-card" data-card="${d.id}" onclick="openDetail('${d.id}')">
+              ${d.poster ? `<img src="${d.poster}">` : `<div class="mosaic-item-ph" style="aspect-ratio:2/3;border-radius:6px">${d.title}</div>`}
+              <div class="tier-card-title">${d.title}</div>
+            </div>`).join('') : `<div class="tier-empty">—</div>`}
+        </div>
+      </div>`;
+  }).join('') + `<div class="empty-msg" style="padding-top:1rem">Note un programme (dans sa fiche) pour qu'il apparaisse ici — les programmes non notés ne sont pas affichés.</div>`;
+
+  requestAnimationFrame(initTierDrag);
+}
+
+let tierDragEl = null, tierDragRow = null;
+function initTierDrag(){
+  document.querySelectorAll('.tier-cards').forEach(row => {
+    if (row.dataset.dragInit) return;
+    row.dataset.dragInit = '1';
+    row.addEventListener('pointerdown', e => {
+      const card = e.target.closest('.tier-card');
+      if (!card) return;
+      tierDragEl = card;
+      tierDragRow = row;
+      card.setPointerCapture(e.pointerId);
+      card.classList.add('dragging');
+    });
+    row.addEventListener('pointermove', e => {
+      if (!tierDragEl || tierDragRow !== row) return;
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const overCard = target && target.closest('.tier-card');
+      if (overCard && overCard !== tierDragEl && overCard.parentElement === row){
+        const rect = overCard.getBoundingClientRect();
+        const before = e.clientX < rect.left + rect.width/2;
+        row.insertBefore(tierDragEl, before ? overCard : overCard.nextSibling);
+      }
+    });
+    row.addEventListener('pointerup', async () => {
+      if (!tierDragEl) return;
+      tierDragEl.classList.remove('dragging');
+      const cards = [...row.querySelectorAll('.tier-card')];
+      tierDragEl = null; tierDragRow = null;
+      const batchPromises = cards.map((el, i) => progressRef(el.dataset.card).set({ tierPos: i }, { merge:true }));
+      await Promise.all(batchPromises).catch(err => console.error(err));
+    });
+    row.addEventListener('pointercancel', () => {
+      if (tierDragEl) tierDragEl.classList.remove('dragging');
+      tierDragEl = null; tierDragRow = null;
+    });
+  });
 }
 
 function cardManage(d){
@@ -1318,7 +1400,7 @@ async function openDetail(id){
     <span class="detail-badge" style="background:${studioColor(d.studio)}33;color:${studioColor(d.studio)}">${d.studio}</span>
     <span class="detail-badge" style="background:var(--bg3);color:var(--muted)">${d.type}</span>
     <span class="detail-badge" style="background:var(--bg3);color:var(--muted)">${d.year||''}${d.duration?' · '+fmtDuration(d.duration,d.episodes):''}</span>`;
-  document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${id}',${n});refreshDetailRating()">★</span>`).join('');
+  document.getElementById('detailStars').innerHTML = [1,2,3,4,5,6,7,8,9,10].map(n => `<button class="${p.rating===n?'lit':''}" onclick="setRatingFor('${id}',${n});refreshDetailRating()">${n}</button>`).join('');
   document.getElementById('detailAdminDelete').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminEdit').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminAssign').style.display = isAdmin ? 'inline-block' : 'none';
@@ -1353,7 +1435,7 @@ async function openDetail(id){
 function refreshDetailRating(){
   if (!currentDetailId) return;
   const p = progress[currentDetailId] || {};
-  document.getElementById('detailStars').innerHTML = [1,2,3,4,5].map(n => `<span class="star ${p.rating>=n?'lit':''}" onclick="setRatingFor('${currentDetailId}',${n});refreshDetailRating()">★</span>`).join('');
+  document.getElementById('detailStars').innerHTML = [1,2,3,4,5,6,7,8,9,10].map(n => `<button class="${p.rating===n?'lit':''}" onclick="setRatingFor('${currentDetailId}',${n});refreshDetailRating()">${n}</button>`).join('');
 }
 
 // ── Navigation swipe / flèches entre fiches (respecte les filtres/vue en cours) ──
