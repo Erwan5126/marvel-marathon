@@ -142,6 +142,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .placement-row select{flex:1;min-width:100px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px}
 .placement-row input[type=text]{width:90px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px}
 .placement-row input[type=text].pdate{width:100px}
+.placement-row input.pep{width:56px;padding:6px 6px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px}
 .placement-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
 .placement-del:hover{color:var(--red)}
 
@@ -500,6 +501,35 @@ function storyDateCompare(a, b){
   }
   return (a.releaseDate||'').localeCompare(b.releaseDate||'');
 }
+// Saisie au format JJMMAAAA (chiffres seuls, sans séparateur) ↔ stockage interne AAAA[-MM[-JJ]].
+// 8 chiffres = jour+mois+année, 6 = mois+année, 4 = année seule.
+function parseDateDigitsInput(raw){
+  const digits = (raw||'').replace(/\D/g,'');
+  if (digits.length >= 8){
+    const dd = digits.slice(0,2), mm = digits.slice(2,4), yyyy = digits.slice(4,8);
+    return `${yyyy}-${mm}-${dd}`;
+  } else if (digits.length >= 6){
+    const mm = digits.slice(0,2), yyyy = digits.slice(2,6);
+    return `${yyyy}-${mm}`;
+  } else if (digits.length >= 4){
+    return digits.slice(0,4);
+  }
+  return '';
+}
+function formatDateForInput(iso){
+  if (!iso) return '';
+  const parts = iso.split('-');
+  if (parts.length === 3) return parts[2] + parts[1] + parts[0];
+  if (parts.length === 2) return parts[1] + parts[0];
+  return parts[0];
+}
+function formatDateDisplay(iso){
+  if (!iso) return '';
+  const parts = iso.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  if (parts.length === 2) return `${parts[1]}/${parts[0]}`;
+  return parts[0];
+}
 
 function renderBoard(){
   const board = document.getElementById('board');
@@ -527,7 +557,8 @@ function renderBoard(){
           id: d.id + '::' + p.id,
           _catalogId: d.id, _placementId: p.id,
           universe: p.universe, branch: p.branch || null,
-          _storyDate: p.storyDate
+          _storyDate: p.storyDate,
+          _epFrom: p.epFrom || null, _epTo: p.epTo || null
         });
       });
     });
@@ -697,7 +728,7 @@ function cardHtmlMobile(d, color, items, columns){
       ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d._catalogId}')" title="Assigner">⚙</span>` : ''}
       <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d._catalogId}')">${p.watched?'✓':''}</div>
       <div class="tcard-title">${d.title}</div>
-      <div class="tcard-meta">${d._storyDate || fmtYear(d)} · ${d.type||''}</div>
+      <div class="tcard-meta">${d._storyDate ? formatDateDisplay(d._storyDate) : fmtYear(d)} · ${d.type||''}${(d._epFrom||d._epTo) ? ` · Ép. ${d._epFrom||'?'}-${d._epTo||'?'}` : ''}</div>
       ${badges}
     </div>`;
 }
@@ -721,13 +752,14 @@ window.addEventListener('load', updateStickyOffset);
 
 function cardHtml(d, color, col, row, colKey){
   const p = progress[d._catalogId] || {};
-  const metaYear = d._storyDate || fmtYear(d);
+  const metaYear = d._storyDate ? formatDateDisplay(d._storyDate) : fmtYear(d);
+  const epLabel = (d._epFrom || d._epTo) ? ` · Ép. ${d._epFrom||'?'}-${d._epTo||'?'}` : '';
   return `
     <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d._catalogId}" data-placement="${d._placementId||d._catalogId}" data-colkey="${colKey}" style="--uc:${color};grid-column:${col};grid-row:${row}" onclick="openDetail('${d._catalogId}','${d._placementId||''}')">
       ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d._catalogId}')" title="Assigner">⚙</span>` : ''}
       <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d._catalogId}')">${p.watched?'✓':''}</div>
       <div class="tcard-title">${d.title}</div>
-      <div class="tcard-meta">${metaYear} · ${d.type||''}</div>
+      <div class="tcard-meta">${metaYear} · ${d.type||''}${epLabel}</div>
     </div>`;
 }
 
@@ -999,15 +1031,24 @@ function openAssign(id){
 }
 function renderPlacementList(){
   const box = document.getElementById('placementList');
+  const prog = catalog.find(x => x.id === assigningId);
+  const isSeries = prog && prog.type === 'Série';
   box.innerHTML = currentAssignPlacements.map((p, i) => `
     <div class="placement-row">
       <select onchange="updatePlacement(${i},'universe',this.value)">${chronoUniverses.map(u=>`<option value="${u.id}" ${p.universe===u.id?'selected':''}>${u.name}</option>`).join('')}</select>
       <input type="text" placeholder="Branche (optionnel)" value="${p.branch||''}" onchange="updatePlacement(${i},'branch',this.value)">
-      <input type="text" class="pdate" placeholder="AAAA[-MM[-JJ]]" value="${p.storyDate||''}" onchange="updatePlacement(${i},'storyDate',this.value)">
+      <input type="text" class="pdate" placeholder="JJMMAAAA" value="${formatDateForInput(p.storyDate)}" onchange="updatePlacement(${i},'storyDate',this.value)">
+      ${isSeries ? `
+        <input type="number" class="pep" placeholder="Ép. de" min="1" value="${p.epFrom||''}" onchange="updatePlacement(${i},'epFrom',this.value)">
+        <input type="number" class="pep" placeholder="à" min="1" value="${p.epTo||''}" onchange="updatePlacement(${i},'epTo',this.value)">
+      ` : ''}
       <button class="placement-del" onclick="removePlacementRow(${i})">🗑</button>
     </div>`).join('') || '<div class="empty-msg" style="padding:8px 0">Aucun placement chronologique — ce programme n\'apparaîtra pas en mode Chronologique.</div>';
 }
-function updatePlacement(i, field, value){ currentAssignPlacements[i][field] = value.trim(); }
+function updatePlacement(i, field, value){
+  currentAssignPlacements[i][field] = field === 'storyDate' ? parseDateDigitsInput(value) : value.trim();
+  if (field === 'storyDate') renderPlacementList(); // réaffiche au format JJMMAAAA normalisé
+}
 function addPlacementRow(){
   currentAssignPlacements.push({ id: 'p_'+Date.now()+'_'+Math.floor(Math.random()*1000), universe: chronoUniverses[0]?.id||'', branch:'', storyDate:'' });
   renderPlacementList();
@@ -1106,7 +1147,7 @@ function fillPlacementSelect(programSelectId, placementSelectId){
   const placements = (d && d.chronoPlacements) || [];
   const sel = document.getElementById(placementSelectId);
   sel.innerHTML = placements.length
-    ? placements.map(p => `<option value="${p.id}">${p.storyDate}${p.branch?' — '+p.branch:''}</option>`).join('')
+    ? placements.map(p => `<option value="${p.id}">${formatDateDisplay(p.storyDate)}${(p.epFrom||p.epTo)?` (Ép. ${p.epFrom||'?'}-${p.epTo||'?'})`:''}${p.branch?' — '+p.branch:''}</option>`).join('')
     : '<option value="">— Aucun placement chronologique —</option>';
 }
 function renderLinkList(){
