@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="fr"><head>
+<script>if(localStorage.getItem('mm-theme')==='light')document.documentElement.classList.add('light');</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -26,10 +27,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--red:#E23636;--gold:#C9973A;--bg:#111;--bg2:#1a1a1a;--bg3:#222;--border:#333;--text:#eee;--muted:#888}
+html.light{--bg:#ffffff;--bg2:#f2f2f4;--bg3:#e9e9ec;--border:#ddd;--text:#111;--muted:#666}
 body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-height:100vh;min-height:100dvh;overflow-x:hidden}
 a{color:inherit;text-decoration:none}
 button{font-family:inherit}
@@ -41,6 +44,7 @@ button{font-family:inherit}
 .nav-link:hover{border-color:var(--gold);color:var(--gold)}
 .header-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .admin-btn{background:var(--bg3);border:1px solid var(--border);color:var(--muted);font-size:10px;padding:5px 10px;border-radius:12px;cursor:pointer;white-space:nowrap}
+.icon-btn{width:28px;height:28px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;flex-shrink:0}
 .admin-btn.active{border-color:var(--gold);color:var(--gold)}
 
 .controls{background:var(--bg2);border-bottom:1px solid var(--border);padding:.6rem 1rem;position:sticky;top:52px;z-index:55;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -137,18 +141,6 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .detail-poster{max-width:100%;width:auto;max-height:340px;height:auto;border-radius:10px;margin:0 auto 12px;display:block}
 .detail-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;margin-bottom:6px}
 .detail-meta{font-size:11px;color:var(--muted);margin-bottom:14px}
-/* ── Export PDF (impression navigateur) ── */
-#printSnapshot{ display:none; position:relative; background:#111 }
-#printSnapshot .tcard, #printSnapshot .uni-head, #printSnapshot .branch-head, #printSnapshot .year-label, #printSnapshot .col-bg{
-  position:absolute !important; margin:0 !important;
-}
-@media print{
-  @page{ size: A3 landscape; margin: 10mm; }
-  body{ overflow: visible !important; }
-  .header, .controls, .mobile-tabs, .mobile-list, .overlay, #exportPdfBtn, .board-wrap{ display:none !important; }
-  #printSnapshot{ display:block !important; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-}
 </style>
 </head>
 <body>
@@ -158,6 +150,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="logo">🕸 Marvel Timelines</div>
     <div class="header-actions">
       <a class="nav-link" href="index.html?v=20260823">📋 Marathon</a>
+      <button class="icon-btn" id="themeBtn" title="Changer de thème" onclick="toggleTheme()">🌙</button>
       <button class="admin-btn" id="adminBtn" onclick="openLogin()">Visiteur</button>
     </div>
   </div>
@@ -168,7 +161,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <button class="on" onclick="setFilter('all')">Tout le catalogue</button>
     <button onclick="setFilter('mine')">Mon marathon</button>
   </div>
-  <button class="mini-btn" id="exportPdfBtn" onclick="window.print()" title="Ouvre la boîte de dialogue d'impression : choisis 'Enregistrer en PDF'">🖨 Exporter en PDF</button>
+  <button class="mini-btn" id="exportPdfBtn" onclick="exportTimelinePNG()" title="Télécharge deux PNG haute résolution (fond sombre + fond clair)">🖼 Exporter en PNG</button>
   <div class="admin-tools" id="adminTools" style="display:none">
     <button class="mini-btn" onclick="openUniverseMgr()">⚙ Univers</button>
     <button class="mini-btn" onclick="openBulkAssignPicker()">📌 Affecter des programmes</button>
@@ -182,8 +175,6 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 
 <div class="mobile-tabs" id="mobileTabs"></div>
 <div class="mobile-list" id="mobileList"></div>
-
-<div id="printSnapshot"></div>
 
 <!-- Connexion admin -->
 <div class="overlay" id="loginOverlay">
@@ -761,36 +752,58 @@ function drawLinks(){
 }
 window.addEventListener('resize', () => requestAnimationFrame(drawLinks));
 
-// ── Export PDF : on fige une copie exacte (positions/tailles réellement rendues à
-// l'écran) plutôt que de laisser le moteur d'impression refaire la mise en page,
-// ce qui casse la grille CSS (hauteurs de ligne écrasées). ──
-function preparePrintSnapshot(){
-  const board = document.getElementById('board');
-  const boardRect = board.getBoundingClientRect();
-  const snap = document.getElementById('printSnapshot');
-  snap.innerHTML = '';
-  snap.style.width = board.scrollWidth + 'px';
-  snap.style.height = board.scrollHeight + 'px';
+// ── Thème sombre / clair, mémorisé sur cet appareil ──
+function getTheme(){ return localStorage.getItem('mm-theme') || 'dark'; }
+function applyTheme(t){
+  document.documentElement.classList.toggle('light', t === 'light');
+  localStorage.setItem('mm-theme', t);
+  const btn = document.getElementById('themeBtn');
+  if (btn) btn.textContent = t === 'light' ? '☀️' : '🌙';
+}
+function toggleTheme(){ applyTheme(getTheme() === 'light' ? 'dark' : 'light'); }
+applyTheme(getTheme());
 
-  board.querySelectorAll('.col-bg, .year-label, .uni-head, .branch-head, .tcard').forEach(el => {
-    const r = el.getBoundingClientRect();
-    const clone = el.cloneNode(true);
-    clone.style.left = (r.left - boardRect.left) + 'px';
-    clone.style.top = (r.top - boardRect.top) + 'px';
-    clone.style.width = r.width + 'px';
-    clone.style.height = r.height + 'px';
-    snap.appendChild(clone);
+// ── Export PNG haute résolution du tableau complet, quel que soit
+// ce qui est actuellement visible à l'écran (défilé ou non) — génère
+// une version fond sombre ET une version fond clair en un seul clic ──
+async function downloadBoardPNG(el, bgColor, filename){
+  const canvas = await html2canvas(el, {
+    backgroundColor: bgColor,
+    scale: 3,
+    useCORS: true,
+    allowTaint: true
   });
-  const svg = document.getElementById('linksSvg');
-  if (svg){
-    const svgClone = svg.cloneNode(true);
-    svgClone.style.position = 'absolute';
-    svgClone.style.left = '0';
-    svgClone.style.top = '0';
-    snap.appendChild(svgClone);
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+async function exportTimelinePNG(){
+  const board = document.getElementById('board');
+  const btn = document.getElementById('exportPdfBtn');
+  const original = btn.textContent;
+  const userTheme = getTheme(); // pour le restaurer une fois l'export terminé
+  btn.disabled = true;
+  try {
+    applyTheme('dark');
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    btn.textContent = '⏳ Version sombre...';
+    await downloadBoardPNG(board, '#111111', 'marvel-timelines-sombre.png');
+    await new Promise(r => setTimeout(r, 400));
+
+    applyTheme('light');
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); // laisse le temps au style de s'appliquer
+    btn.textContent = '⏳ Version claire...';
+    await downloadBoardPNG(board, '#ffffff', 'marvel-timelines-claire.png');
+  } catch(err){
+    alert('Erreur export : ' + err.message);
+  } finally {
+    applyTheme(userTheme);
+    btn.textContent = original;
+    btn.disabled = false;
   }
 }
-window.addEventListener('beforeprint', preparePrintSnapshot);
 
 // ── Gestion des univers (admin) ──
 function openUniverseMgr(){ renderUniverseMgr(); document.getElementById('universeMgrOverlay').classList.add('open'); }
