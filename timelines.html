@@ -137,6 +137,13 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .bulk-search{width:100%;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;margin-bottom:8px}
 .bulk-actions{display:flex;gap:6px;margin-bottom:4px}
 .bulk-mini-btn{font-size:10px;padding:3px 9px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
+.placement-row{display:flex;gap:6px;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.placement-row:last-child{border-bottom:none}
+.placement-row select{flex:1;min-width:100px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px}
+.placement-row input[type=text]{width:90px;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px}
+.placement-row input[type=text].pdate{width:100px}
+.placement-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}
+.placement-del:hover{color:var(--red)}
 
 .detail-poster{max-width:100%;width:auto;max-height:340px;height:auto;border-radius:10px;margin:0 auto 12px;display:block}
 .detail-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;margin-bottom:6px}
@@ -157,6 +164,10 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 </div>
 
 <div class="controls">
+  <div class="segmented" id="sortToggle">
+    <button class="on" onclick="setSort('release')">Ordre de sortie</button>
+    <button onclick="setSort('chrono')">Chronologique</button>
+  </div>
   <div class="segmented" id="filterToggle">
     <button class="on" onclick="setFilter('all')">Tout le catalogue</button>
     <button onclick="setFilter('mine')">Mon marathon</button>
@@ -213,12 +224,19 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   </div>
 </div>
 
-<!-- Assignation d'un programme (univers / ordre / branche) -->
+<!-- Assignation d'un programme -->
 <div class="overlay" id="assignOverlay">
   <div class="modal">
     <div class="modal-title" id="assignTitle">Assigner</div>
+
+    <div style="font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Ordre de sortie</div>
     <div class="field"><label>Univers</label><select id="assignUniverse"></select></div>
     <div class="field"><label>Branche (optionnel — laisser vide si tronc commun)</label><input type="text" id="assignBranch" placeholder="ex: Branche originale"></div>
+
+    <div style="font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px;padding-top:14px;border-top:1px dashed var(--border)">Placements chronologiques</div>
+    <div id="placementList"></div>
+    <button class="bulk-mini-btn" style="margin-top:6px" onclick="addPlacementRow()">+ Ajouter un placement</button>
+
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('assignOverlay')">Annuler</button>
       <button class="btn btn-primary" onclick="saveAssign()">Enregistrer</button>
@@ -230,8 +248,16 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 <div class="overlay" id="linkMgrOverlay">
   <div class="modal">
     <div class="modal-title">Liens entre programmes</div>
-    <div class="field"><label>Programme A</label><select id="linkA"></select></div>
-    <div class="field"><label>Programme B</label><select id="linkB"></select></div>
+    <div class="field"><label>Catégorie</label>
+      <select id="linkCategory" onchange="onLinkCategoryChange()">
+        <option value="multiverse">🌀 Rencontre multiversielle</option>
+        <option value="timetravel">🕐 Voyage dans le temps</option>
+      </select>
+    </div>
+    <div class="field"><label>Programme A</label><select id="linkA" onchange="onLinkProgramChange()"></select></div>
+    <div class="field" id="linkAPlacementField" style="display:none"><label>Époque de A</label><select id="linkAPlacement"></select></div>
+    <div class="field"><label>Programme B</label><select id="linkB" onchange="onLinkProgramChange()"></select></div>
+    <div class="field" id="linkBPlacementField" style="display:none"><label>Époque de B</label><select id="linkBPlacement"></select></div>
     <div class="field"><label>Type de relation</label>
       <select id="linkType">
         <option value="sequel">B est la suite directe de A (flèche pleine)</option>
@@ -297,6 +323,7 @@ let progress = {};
 let isAdmin = false;
 let filterMode = 'all'; // 'all' | 'mine'
 let currentDetailId = null;
+let currentDetailPlacementId = null;
 let navNextOf = {}, navPrevOf = {};
 
 auth.onAuthStateChanged(user => {
@@ -418,6 +445,12 @@ function toggleWatchedFor(id){
 }
 
 // ── Réglages ──
+let sortMode = 'release'; // 'release' | 'chrono'
+function setSort(mode){
+  sortMode = mode;
+  document.querySelectorAll('#sortToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='release')||(i===1&&mode==='chrono')));
+  renderBoard();
+}
 function setFilter(mode){
   filterMode = mode;
   document.querySelectorAll('#filterToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='all')||(i===1&&mode==='mine')));
@@ -434,6 +467,21 @@ function hexToRgba(hex, alpha){
   const b = parseInt(hex.substring(4,6),16) || 0;
   return `rgba(${r},${g},${b},${alpha})`;
 }
+function parseStoryDate(s){
+  const parts = (s||'').split('-');
+  return { year: parseInt(parts[0],10)||0, month: parts[1]?parseInt(parts[1],10):null, day: parts[2]?parseInt(parts[2],10):null };
+}
+// Compare deux placements par date narrative précise ; dès qu'il manque la précision
+// nécessaire pour départager, repli automatique sur la date de sortie réelle.
+function storyDateCompare(a, b){
+  const pa = parseStoryDate(a._storyDate), pb = parseStoryDate(b._storyDate);
+  if (pa.year !== pb.year) return pa.year - pb.year;
+  if (pa.month != null && pb.month != null){
+    if (pa.month !== pb.month) return pa.month - pb.month;
+    if (pa.day != null && pb.day != null && pa.day !== pb.day) return pa.day - pb.day;
+  }
+  return (a.releaseDate||'').localeCompare(b.releaseDate||'');
+}
 
 function renderBoard(){
   const board = document.getElementById('board');
@@ -442,11 +490,36 @@ function renderBoard(){
     removeLinksSvg();
     return;
   }
-  let items = catalog.filter(d => d.universe);
-  if (filterMode === 'mine') items = items.filter(d => isIncluded(d.id));
 
-  const yearOf = d => fmtYear(d) || '?';
-  const dateSort = (a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||'');
+  // Construit la liste d'éléments à placer sur la grille : en ordre de sortie, un
+  // programme = une tuile (comportement inchangé). En chronologique, un programme
+  // avec plusieurs placements devient plusieurs tuiles indépendantes.
+  let items;
+  if (sortMode === 'chrono'){
+    let base = catalog.filter(d => Array.isArray(d.chronoPlacements) && d.chronoPlacements.length > 0);
+    if (filterMode === 'mine') base = base.filter(d => isIncluded(d.id));
+    items = [];
+    base.forEach(d => {
+      d.chronoPlacements.forEach(p => {
+        items.push({
+          ...d,
+          id: d.id + '::' + p.id,
+          _catalogId: d.id, _placementId: p.id,
+          universe: p.universe, branch: p.branch || null,
+          _storyDate: p.storyDate
+        });
+      });
+    });
+  } else {
+    items = catalog.filter(d => d.universe);
+    if (filterMode === 'mine') items = items.filter(d => isIncluded(d.id));
+    items = items.map(d => ({ ...d, _catalogId: d.id, _placementId: null }));
+  }
+
+  const yearOf = sortMode === 'chrono'
+    ? (d => (d._storyDate||'').slice(0,4) || '?')
+    : (d => fmtYear(d) || '?');
+  const dateSort = sortMode === 'chrono' ? storyDateCompare : ((a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||''));
 
   // Construit la liste des colonnes : tronc de chaque univers, suivi de ses branches
   // — uniquement si au moins un programme y est visible (respecte le filtre en cours)
@@ -462,26 +535,31 @@ function renderBoard(){
     : items.filter(d => d.universe===col.u.id && d.branch===col.branchName);
 
   // ── Navigation suivant/précédent pour la fiche détail :
-  // priorité au fil automatique (ordre chronologique de la colonne), puis repli sur un lien manuel ──
+  // priorité au fil automatique (ordre de la colonne), puis repli sur un lien manuel
+  // (repli désactivé en mode Chronologique — un même programme peut apparaître
+  // plusieurs fois, la correspondance lien→instance serait ambiguë) ──
   navNextOf = {}; navPrevOf = {};
   columns.forEach(col => {
-    const ids = itemsOfColumn(col).slice().sort(dateSort).map(d => d.id);
-    for (let i = 0; i < ids.length - 1; i++){
-      navNextOf[ids[i]] = ids[i+1];
-      navPrevOf[ids[i+1]] = ids[i];
+    const ordered = itemsOfColumn(col).slice().sort(dateSort);
+    for (let i = 0; i < ordered.length - 1; i++){
+      const a = ordered[i], b = ordered[i+1];
+      navNextOf[a.id] = { catalogId: b._catalogId, placementId: b._placementId };
+      navPrevOf[b.id] = { catalogId: a._catalogId, placementId: a._placementId };
     }
   });
-  links.forEach(l => {
-    if (navNextOf[l.a] === undefined) navNextOf[l.a] = l.b;
-    if (navPrevOf[l.b] === undefined) navPrevOf[l.b] = l.a;
-  });
+  if (sortMode === 'release'){
+    links.forEach(l => {
+      if (navNextOf[l.a] === undefined) navNextOf[l.a] = { catalogId: l.b, placementId: null };
+      if (navPrevOf[l.b] === undefined) navPrevOf[l.b] = { catalogId: l.a, placementId: null };
+    });
+  }
 
   // Années réellement présentes (toutes colonnes confondues), triées
   const years = [...new Set(items.map(yearOf))].filter(y => y !== '?').sort();
 
   // Classement GLOBAL par date exacte à l'intérieur de chaque année (toutes colonnes
   // confondues) : chaque programme a sa propre ligne, même si un autre univers a
-  // un programme la même année — pour ne jamais perdre l'ordre de sortie réel.
+  // un programme la même année — pour ne jamais perdre l'ordre réel.
   const yearGroups = {};
   years.forEach(y => { yearGroups[y] = items.filter(d => yearOf(d) === y).sort(dateSort); });
   const yearRowCount = {};
@@ -567,34 +645,38 @@ function renderMobileView(columns, items, itemsOfColumn, yearOf, dateSort){
 
 function setMobileTab(key){
   mobileActiveKey = key;
-  renderMobileView(mobileColumnsRef, catalog, (col) => col.type==='trunk'
-    ? catalog.filter(d => d.universe===col.u.id && !d.branch && (filterMode!=='mine'||isIncluded(d.id)))
-    : catalog.filter(d => d.universe===col.u.id && d.branch===col.branchName && (filterMode!=='mine'||isIncluded(d.id))),
-    d => fmtYear(d) || '?', (a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||''));
+  renderBoard();
 }
 
 function cardHtmlMobile(d, color, items, columns){
-  const p = progress[d.id] || {};
-  const relatedLinks = links.filter(l => l.a===d.id || l.b===d.id);
+  const p = progress[d._catalogId] || {};
+  const relatedLinks = links.filter(l => l.a===d._catalogId || l.b===d._catalogId);
   const badges = relatedLinks.map(l => {
-    const otherId = l.a===d.id ? l.b : l.a;
-    const other = items.find(x => x.id===otherId) || catalog.find(x => x.id===otherId);
+    const otherId = l.a===d._catalogId ? l.b : l.a;
+    const otherPlacementId = l.a===d._catalogId ? l.bPlacementId : l.aPlacementId;
+    const otherInstance = otherPlacementId
+      ? items.find(x => x._catalogId===otherId && x._placementId===otherPlacementId)
+      : items.find(x => x._catalogId===otherId);
+    const other = catalog.find(x => x.id===otherId);
     if (!other) return '';
-    const otherCol = columns.find(c => c.type==='trunk' ? (c.u.id===other.universe && !other.branch) : (c.u.id===other.universe && other.branch===c.branchName));
+    const otherCol = otherInstance
+      ? columns.find(c => c.key === (otherInstance.branch ? otherInstance.universe+'::'+otherInstance.branch : otherInstance.universe))
+      : columns.find(c => c.type==='trunk' ? (c.u.id===other.universe && !other.branch) : (c.u.id===other.universe && other.branch===c.branchName));
     const otherColor = otherCol ? otherCol.u.color : '#888';
     const otherKey = otherCol ? otherCol.key : '';
-    const isSuccessor = l.b === d.id; // ce programme EST la suite de l'autre
+    const isSuccessor = l.b === d._catalogId; // ce programme EST la suite de l'autre
+    const catIcon = l.category === 'timetravel' ? '🕐' : '🌀';
     const label = l.label || (l.type==='reference' ? 'Référence' : (isSuccessor ? 'Précédent' : 'Suite'));
     return `<div class="mlink-badge" onclick='event.stopPropagation();jumpToMobile("${otherKey}","${otherId}")'>
-      <span class="mlink-dot" style="background:${otherColor}"></span>🔗 ${label} : ${other.title}
+      <span class="mlink-dot" style="background:${otherColor}"></span>${catIcon} ${label} : ${other.title}
     </div>`;
   }).join('');
   return `
-    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d.id}" style="--uc:${color}" onclick="openDetail('${d.id}')">
-      ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d.id}')" title="Assigner">⚙</span>` : ''}
-      <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d.id}')">${p.watched?'✓':''}</div>
+    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d._catalogId}" data-placement="${d._placementId||d._catalogId}" style="--uc:${color}" onclick="openDetail('${d._catalogId}','${d._placementId||''}')">
+      ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d._catalogId}')" title="Assigner">⚙</span>` : ''}
+      <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d._catalogId}')">${p.watched?'✓':''}</div>
       <div class="tcard-title">${d.title}</div>
-      <div class="tcard-meta">${fmtYear(d)} · ${d.type||''}</div>
+      <div class="tcard-meta">${d._storyDate || fmtYear(d)} · ${d.type||''}</div>
       ${badges}
     </div>`;
 }
@@ -617,13 +699,14 @@ window.addEventListener('resize', () => requestAnimationFrame(updateStickyOffset
 window.addEventListener('load', updateStickyOffset);
 
 function cardHtml(d, color, col, row, colKey){
-  const p = progress[d.id] || {};
+  const p = progress[d._catalogId] || {};
+  const metaYear = d._storyDate || fmtYear(d);
   return `
-    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d.id}" data-colkey="${colKey}" style="--uc:${color};grid-column:${col};grid-row:${row}" onclick="openDetail('${d.id}')">
-      ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d.id}')" title="Assigner">⚙</span>` : ''}
-      <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d.id}')">${p.watched?'✓':''}</div>
+    <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d._catalogId}" data-placement="${d._placementId||d._catalogId}" data-colkey="${colKey}" style="--uc:${color};grid-column:${col};grid-row:${row}" onclick="openDetail('${d._catalogId}','${d._placementId||''}')">
+      ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d._catalogId}')" title="Assigner">⚙</span>` : ''}
+      <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d._catalogId}')">${p.watched?'✓':''}</div>
       <div class="tcard-title">${d.title}</div>
-      <div class="tcard-meta">${fmtYear(d)} · ${d.type||''}</div>
+      <div class="tcard-meta">${metaYear} · ${d.type||''}</div>
     </div>`;
 }
 
@@ -691,10 +774,15 @@ function drawLinks(){
   });
 
   // ── Liens manuels (créés par l'admin) : partent toujours du bas de A,
-  // et ne voyagent que dans les couloirs vides entre lignes/colonnes de la grille ──
+  // et ne voyagent que dans les couloirs vides entre lignes/colonnes de la grille.
+  // Un lien "voyage dans le temps" cible une tuile précise si spécifiée ;
+  // un lien "rencontre multiversielle" cible le programme au sens large. ──
   links.forEach((l, i) => {
-    const elA = board.querySelector(`[data-card="${l.a}"]`);
-    const elB = board.querySelector(`[data-card="${l.b}"]`);
+    const category = l.category || 'multiverse';
+    const selA = (category === 'timetravel' && l.aPlacementId) ? `[data-placement="${l.aPlacementId}"]` : `[data-card="${l.a}"]`;
+    const selB = (category === 'timetravel' && l.bPlacementId) ? `[data-placement="${l.bPlacementId}"]` : `[data-card="${l.b}"]`;
+    const elA = board.querySelector(selA);
+    const elB = board.querySelector(selB);
     if (!elA || !elB) return;
     any = true;
     const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
@@ -840,19 +928,35 @@ async function moveUniverse(id, dir){
   await batch.commit();
 }
 async function deleteUniverse(id, name){
-  const affected = catalog.filter(d => d.universe === id);
-  const msg = affected.length > 0
-    ? `${affected.length} programme(s) sont dans "${name}" et perdront leur assignation. Continuer ?`
+  const affectedIds = new Set([
+    ...catalog.filter(d => d.universe === id).map(d => d.id),
+    ...catalog.filter(d => Array.isArray(d.chronoPlacements) && d.chronoPlacements.some(p => p.universe === id)).map(d => d.id)
+  ]);
+  const msg = affectedIds.size > 0
+    ? `${affectedIds.size} programme(s) référencent "${name}" (ordre de sortie et/ou placements chronologiques) et perdront cette assignation. Continuer ?`
     : `Supprimer l'univers "${name}" ?`;
   if (!confirm(msg)) return;
   const batch = db.batch();
-  affected.forEach(d => batch.update(db.collection('catalog').doc(d.id), { universe: firebase.firestore.FieldValue.delete(), branch: firebase.firestore.FieldValue.delete() }));
+  affectedIds.forEach(cid => {
+    const d = catalog.find(x => x.id === cid);
+    const update = {};
+    if (d.universe === id){
+      update.universe = firebase.firestore.FieldValue.delete();
+      update.branch = firebase.firestore.FieldValue.delete();
+    }
+    if (Array.isArray(d.chronoPlacements) && d.chronoPlacements.some(p => p.universe === id)){
+      const cleaned = d.chronoPlacements.filter(p => p.universe !== id);
+      update.chronoPlacements = cleaned.length ? cleaned : firebase.firestore.FieldValue.delete();
+    }
+    batch.update(db.collection('catalog').doc(cid), update);
+  });
   batch.delete(db.collection('universes').doc(id));
   await batch.commit();
 }
 
 // ── Assignation d'un programme ──
 let assigningId = null;
+let currentAssignPlacements = [];
 function openAssign(id){
   assigningId = id;
   const d = catalog.find(x => x.id === id);
@@ -861,8 +965,27 @@ function openAssign(id){
   document.getElementById('assignUniverse').innerHTML = '<option value="">— Aucun —</option>' + universes.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
   document.getElementById('assignUniverse').value = d.universe || '';
   document.getElementById('assignBranch').value = d.branch || '';
+  currentAssignPlacements = (d.chronoPlacements || []).map(p => ({...p}));
+  renderPlacementList();
   document.getElementById('assignOverlay').classList.add('open');
 }
+function renderPlacementList(){
+  const box = document.getElementById('placementList');
+  box.innerHTML = currentAssignPlacements.map((p, i) => `
+    <div class="placement-row">
+      <select onchange="updatePlacement(${i},'universe',this.value)">${universes.map(u=>`<option value="${u.id}" ${p.universe===u.id?'selected':''}>${u.name}</option>`).join('')}</select>
+      <input type="text" placeholder="Branche (optionnel)" value="${p.branch||''}" onchange="updatePlacement(${i},'branch',this.value)">
+      <input type="text" class="pdate" placeholder="AAAA[-MM[-JJ]]" value="${p.storyDate||''}" onchange="updatePlacement(${i},'storyDate',this.value)">
+      <button class="placement-del" onclick="removePlacementRow(${i})">🗑</button>
+    </div>`).join('') || '<div class="empty-msg" style="padding:8px 0">Aucun placement chronologique — ce programme n\'apparaîtra pas en mode Chronologique.</div>';
+}
+function updatePlacement(i, field, value){ currentAssignPlacements[i][field] = value.trim(); }
+function addPlacementRow(){
+  currentAssignPlacements.push({ id: 'p_'+Date.now()+'_'+Math.floor(Math.random()*1000), universe: universes[0]?.id||'', branch:'', storyDate:'' });
+  renderPlacementList();
+}
+function removePlacementRow(i){ currentAssignPlacements.splice(i,1); renderPlacementList(); }
+
 function saveAssign(){
   if (!assigningId) return;
   const universe = document.getElementById('assignUniverse').value;
@@ -870,6 +993,8 @@ function saveAssign(){
   const update = {};
   update.universe = universe ? universe : firebase.firestore.FieldValue.delete();
   update.branch = branch ? branch : firebase.firestore.FieldValue.delete();
+  const validPlacements = currentAssignPlacements.filter(p => p.universe && p.storyDate);
+  update.chronoPlacements = validPlacements.length ? validPlacements : firebase.firestore.FieldValue.delete();
   db.collection('catalog').doc(assigningId).update(update)
     .then(() => closeOverlay('assignOverlay'))
     .catch(err => alert('Erreur : ' + err.message));
@@ -926,16 +1051,39 @@ function openLinkMgr(){
   document.getElementById('linkA').innerHTML = opts;
   document.getElementById('linkB').innerHTML = opts;
   document.getElementById('linkLabel').value = '';
+  document.getElementById('linkCategory').value = 'multiverse';
+  onLinkCategoryChange();
   renderLinkList();
   document.getElementById('linkMgrOverlay').classList.add('open');
+}
+function onLinkCategoryChange(){
+  const cat = document.getElementById('linkCategory').value;
+  document.getElementById('linkAPlacementField').style.display = cat==='timetravel' ? 'block' : 'none';
+  document.getElementById('linkBPlacementField').style.display = cat==='timetravel' ? 'block' : 'none';
+  if (cat === 'timetravel') onLinkProgramChange();
+}
+function onLinkProgramChange(){
+  if (document.getElementById('linkCategory').value !== 'timetravel') return;
+  fillPlacementSelect('linkA', 'linkAPlacement');
+  fillPlacementSelect('linkB', 'linkBPlacement');
+}
+function fillPlacementSelect(programSelectId, placementSelectId){
+  const catalogId = document.getElementById(programSelectId).value;
+  const d = catalog.find(x => x.id === catalogId);
+  const placements = (d && d.chronoPlacements) || [];
+  const sel = document.getElementById(placementSelectId);
+  sel.innerHTML = placements.length
+    ? placements.map(p => `<option value="${p.id}">${p.storyDate}${p.branch?' — '+p.branch:''}</option>`).join('')
+    : '<option value="">— Aucun placement chronologique —</option>';
 }
 function renderLinkList(){
   const box = document.getElementById('linkList');
   box.innerHTML = links.map(l => {
     const a = catalog.find(d=>d.id===l.a), b = catalog.find(d=>d.id===l.b);
     const arrow = l.type === 'reference' ? '↔' : '→';
+    const catIcon = l.category === 'timetravel' ? '🕐' : '🌀';
     return `<div class="link-row">
-      <span class="link-txt">${a?a.title:'?'} ${arrow} ${b?b.title:'?'}${l.label?' — '+l.label:''}</span>
+      <span class="link-txt">${catIcon} ${a?a.title:'?'} ${arrow} ${b?b.title:'?'}${l.label?' — '+l.label:''}</span>
       <button class="link-del" onclick="deleteLink('${l.id}')">🗑</button>
     </div>`;
   }).join('') || '<div class="empty-msg">Aucun lien.</div>';
@@ -944,9 +1092,17 @@ function addLink(){
   const a = document.getElementById('linkA').value;
   const b = document.getElementById('linkB').value;
   const type = document.getElementById('linkType').value;
+  const category = document.getElementById('linkCategory').value;
   const label = document.getElementById('linkLabel').value.trim();
   if (!a || !b || a === b) return alert('Choisis deux programmes différents.');
-  db.collection('links').add({ a, b, type, label }).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
+  const entry = { a, b, type, category, label };
+  if (category === 'timetravel'){
+    const aPid = document.getElementById('linkAPlacement').value;
+    const bPid = document.getElementById('linkBPlacement').value;
+    if (aPid) entry.aPlacementId = aPid;
+    if (bPid) entry.bPlacementId = bPid;
+  }
+  db.collection('links').add(entry).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
 }
 function deleteLink(id){
   if (!confirm('Supprimer ce lien ?')) return;
@@ -954,10 +1110,11 @@ function deleteLink(id){
 }
 
 // ── Fiche programme simplifiée ──
-function openDetail(id){
+function openDetail(id, placementId){
   const d = catalog.find(x => x.id === id);
   if (!d) return;
   currentDetailId = id;
+  currentDetailPlacementId = placementId || null;
   const p = progress[id] || {};
   document.getElementById('detailPoster').src = d.poster || '';
   document.getElementById('detailTitle').textContent = d.title;
@@ -965,25 +1122,29 @@ function openDetail(id){
   const wBtn = document.getElementById('detailWatchBtn');
   wBtn.textContent = p.watched ? '✓ Vu' : 'Marquer comme vu';
   document.getElementById('detailAssignBtn').style.display = isAdmin ? 'inline-block' : 'none';
-  document.getElementById('detailPrevBtn').disabled = !navPrevOf[id];
-  document.getElementById('detailNextBtn').disabled = !navNextOf[id];
+  const navKey = currentDetailPlacementId ? (currentDetailId+'::'+currentDetailPlacementId) : currentDetailId;
+  document.getElementById('detailPrevBtn').disabled = !navPrevOf[navKey];
+  document.getElementById('detailNextBtn').disabled = !navNextOf[navKey];
 
   const relLinks = links.filter(l => l.a===id || l.b===id);
   document.getElementById('detailLinks').innerHTML = relLinks.map(l => {
     const otherId = l.a===id ? l.b : l.a;
+    const otherPlacementId = l.a===id ? l.bPlacementId : l.aPlacementId;
     const other = catalog.find(x => x.id === otherId);
     if (!other) return '';
+    const catIcon = l.category === 'timetravel' ? '🕐' : '🌀';
     const isSuccessor = l.b === id; // ce programme EST la suite de l'autre
     const label = l.label || (l.type==='reference' ? 'Référence' : (isSuccessor ? 'Précédent' : 'Suite'));
-    return `<div class="mlink-badge" onclick="openDetail('${otherId}')">🔗 ${label} : ${other.title}</div>`;
+    return `<div class="mlink-badge" onclick="openDetail('${otherId}'${otherPlacementId?`,'${otherPlacementId}'`:''})">${catIcon} ${label} : ${other.title}</div>`;
   }).join('');
 
   document.getElementById('detailOverlay').classList.add('open');
 }
 function detailNav(dir){
   if (!currentDetailId) return;
-  const targetId = dir < 0 ? navPrevOf[currentDetailId] : navNextOf[currentDetailId];
-  if (targetId) openDetail(targetId);
+  const navKey = currentDetailPlacementId ? (currentDetailId+'::'+currentDetailPlacementId) : currentDetailId;
+  const target = dir < 0 ? navPrevOf[navKey] : navNextOf[navKey];
+  if (target) openDetail(target.catalogId, target.placementId);
 }
 function toggleDetailWatched(){
   if (!currentDetailId) return;
