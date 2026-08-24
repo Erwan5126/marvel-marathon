@@ -177,6 +177,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   <div class="admin-tools" id="adminTools" style="display:none">
     <button class="mini-btn" onclick="openUniverseMgr()">⚙ Univers</button>
     <button class="mini-btn" id="bulkAssignBtn" onclick="openBulkAssignPicker()">📌 Affecter des programmes</button>
+    <button class="mini-btn" id="chronoUnassignedBtn" onclick="openChronoUnassigned()" style="display:none">📋 Non affectés (Chrono)</button>
     <button class="mini-btn" onclick="openLinkMgr()">🔗 Liens</button>
   </div>
 </div>
@@ -253,6 +254,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
       <select id="linkCategory" onchange="onLinkCategoryChange()">
         <option value="multiverse">🌀 Rencontre multiversielle</option>
         <option value="timetravel">🕐 Voyage dans le temps</option>
+        <option value="branchsplit">🌿 Scission de branche</option>
       </select>
     </div>
     <div class="field"><label>Programme A</label><select id="linkA" onchange="onLinkProgramChange()"></select></div>
@@ -291,6 +293,18 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('bulkAssignOverlay')">Fermer</button>
       <button class="btn btn-primary" onclick="confirmBulkAssign()">Ajouter la sélection</button>
+    </div>
+  </div>
+</div>
+
+<!-- Programmes non affectés en Chronologique -->
+<div class="overlay" id="chronoUnassignedOverlay">
+  <div class="modal">
+    <div class="modal-title">Programmes non affectés (Chronologique)</div>
+    <input type="text" class="bulk-search" id="chronoUnassignedSearch" placeholder="Rechercher..." oninput="renderChronoUnassignedList()">
+    <div class="bulk-list" id="chronoUnassignedList"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="closeOverlay('chronoUnassignedOverlay')">Fermer</button>
     </div>
   </div>
 </div>
@@ -468,6 +482,8 @@ function setSort(mode){
   document.querySelectorAll('#sortToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='release')||(i===1&&mode==='chrono')));
   const bulkBtn = document.getElementById('bulkAssignBtn');
   if (bulkBtn) bulkBtn.style.display = mode === 'chrono' ? 'none' : 'inline-block';
+  const chronoBtn = document.getElementById('chronoUnassignedBtn');
+  if (chronoBtn) chronoBtn.style.display = mode === 'chrono' ? 'inline-block' : 'none';
   renderBoard();
 }
 function setFilter(mode){
@@ -486,12 +502,21 @@ function hexToRgba(hex, alpha){
   const b = parseInt(hex.substring(4,6),16) || 0;
   return `rgba(${r},${g},${b},${alpha})`;
 }
+// Analyse une date narrative stockée en interne, au format AAAA[-MM[-JJ]] — l'année
+// peut être négative (ex: "-5000-03-01") pour représenter une date avant J.-C.
+function splitStoryDate(iso){
+  const m = /^(-?\d+)(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/.exec(iso || '');
+  if (!m) return null;
+  return { y: m[1], mo: m[2] || null, d: m[3] || null };
+}
 function parseStoryDate(s){
-  const parts = (s||'').split('-');
-  return { year: parseInt(parts[0],10)||0, month: parts[1]?parseInt(parts[1],10):null, day: parts[2]?parseInt(parts[2],10):null };
+  const parts = splitStoryDate(s);
+  if (!parts) return { year: 0, month: null, day: null };
+  return { year: parseInt(parts.y, 10) || 0, month: parts.mo ? parseInt(parts.mo, 10) : null, day: parts.d ? parseInt(parts.d, 10) : null };
 }
 // Compare deux placements par date narrative précise ; dès qu'il manque la précision
-// nécessaire pour départager, repli automatique sur la date de sortie réelle.
+// nécessaire pour départager : priorité à un ordre manuel s'il est renseigné des deux
+// côtés, sinon repli automatique sur la date de sortie réelle.
 function storyDateCompare(a, b){
   const pa = parseStoryDate(a._storyDate), pb = parseStoryDate(b._storyDate);
   if (pa.year !== pb.year) return pa.year - pb.year;
@@ -499,36 +524,52 @@ function storyDateCompare(a, b){
     if (pa.month !== pb.month) return pa.month - pb.month;
     if (pa.day != null && pb.day != null && pa.day !== pb.day) return pa.day - pb.day;
   }
+  const oa = a._yearOrder, ob = b._yearOrder;
+  if (oa != null && ob != null && oa !== ob) return oa - ob;
   return (a.releaseDate||'').localeCompare(b.releaseDate||'');
 }
 // Saisie au format JJMMAAAA (chiffres seuls, sans séparateur) ↔ stockage interne AAAA[-MM[-JJ]].
 // 8 chiffres = jour+mois+année, 6 = mois+année, 4 = année seule.
+// Un "-" au tout début (ex: -5000) indique une date avant J.-C.
 function parseDateDigitsInput(raw){
-  const digits = (raw||'').replace(/\D/g,'');
+  raw = (raw || '').trim();
+  const sign = raw.startsWith('-') ? '-' : '';
+  const digits = raw.replace(/\D/g,'');
+  if (!digits) return '';
   if (digits.length >= 8){
     const dd = digits.slice(0,2), mm = digits.slice(2,4), yyyy = digits.slice(4,8);
-    return `${yyyy}-${mm}-${dd}`;
+    return `${sign}${yyyy}-${mm}-${dd}`;
   } else if (digits.length >= 6){
     const mm = digits.slice(0,2), yyyy = digits.slice(2,6);
-    return `${yyyy}-${mm}`;
+    return `${sign}${yyyy}-${mm}`;
   } else if (digits.length >= 4){
-    return digits.slice(0,4);
+    return `${sign}${digits.slice(0,4)}`;
   }
   return '';
 }
 function formatDateForInput(iso){
-  if (!iso) return '';
-  const parts = iso.split('-');
-  if (parts.length === 3) return parts[2] + parts[1] + parts[0];
-  if (parts.length === 2) return parts[1] + parts[0];
-  return parts[0];
+  const parts = splitStoryDate(iso);
+  if (!parts) return '';
+  const sign = parts.y.startsWith('-') ? '-' : '';
+  const yDigits = parts.y.replace('-','');
+  if (parts.d) return sign + parts.d + parts.mo + yDigits;
+  if (parts.mo) return sign + parts.mo + yDigits;
+  return sign + yDigits;
 }
 function formatDateDisplay(iso){
-  if (!iso) return '';
-  const parts = iso.split('-');
-  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
-  if (parts.length === 2) return `${parts[1]}/${parts[0]}`;
-  return parts[0];
+  const parts = splitStoryDate(iso);
+  if (!parts) return '';
+  const yNum = parseInt(parts.y, 10);
+  const yLabel = yNum < 0 ? `${Math.abs(yNum)} av. J.-C.` : `${yNum}`;
+  if (parts.d) return `${parts.d}/${parts.mo}/${yLabel}`;
+  if (parts.mo) return `${parts.mo}/${yLabel}`;
+  return yLabel;
+}
+// Un seul épisode renseigné → juste ce numéro ; les deux et différents → une plage ; aucun → rien.
+function formatEpRange(from, to){
+  if (!from && !to) return '';
+  if (from && to && from !== to) return `Ép. ${from}-${to}`;
+  return `Ép. ${from || to}`;
 }
 
 function renderBoard(){
@@ -558,7 +599,8 @@ function renderBoard(){
           _catalogId: d.id, _placementId: p.id,
           universe: p.universe, branch: p.branch || null,
           _storyDate: p.storyDate,
-          _epFrom: p.epFrom || null, _epTo: p.epTo || null
+          _epFrom: p.epFrom || null, _epTo: p.epTo || null,
+          _yearOrder: (p.yearOrder !== undefined && p.yearOrder !== '' && p.yearOrder !== null) ? Number(p.yearOrder) : null
         });
       });
     });
@@ -717,7 +759,7 @@ function cardHtmlMobile(d, color, items, columns){
     const otherColor = otherCol ? otherCol.u.color : '#888';
     const otherKey = otherCol ? otherCol.key : '';
     const isSuccessor = l.b === d._catalogId; // ce programme EST la suite de l'autre
-    const catIcon = l.category === 'timetravel' ? '🕐' : '🌀';
+    const catIcon = categoryIcon(l.category);
     const label = l.label || (l.type==='reference' ? 'Référence' : (isSuccessor ? 'Précédent' : 'Suite'));
     return `<div class="mlink-badge" onclick='event.stopPropagation();jumpToMobile("${otherKey}","${otherId}")'>
       <span class="mlink-dot" style="background:${otherColor}"></span>${catIcon} ${label} : ${other.title}
@@ -728,7 +770,7 @@ function cardHtmlMobile(d, color, items, columns){
       ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d._catalogId}')" title="Assigner">⚙</span>` : ''}
       <div class="tcard-check" onclick="event.stopPropagation();toggleWatchedFor('${d._catalogId}')">${p.watched?'✓':''}</div>
       <div class="tcard-title">${d.title}</div>
-      <div class="tcard-meta">${d._storyDate ? formatDateDisplay(d._storyDate) : fmtYear(d)} · ${d.type||''}${(d._epFrom||d._epTo) ? ` · Ép. ${d._epFrom||'?'}-${d._epTo||'?'}` : ''}</div>
+      <div class="tcard-meta">${d._storyDate ? formatDateDisplay(d._storyDate) : fmtYear(d)} · ${d.type||''}${(d._epFrom||d._epTo) ? ` · ${formatEpRange(d._epFrom, d._epTo)}` : ''}</div>
       ${badges}
     </div>`;
 }
@@ -753,7 +795,7 @@ window.addEventListener('load', updateStickyOffset);
 function cardHtml(d, color, col, row, colKey){
   const p = progress[d._catalogId] || {};
   const metaYear = d._storyDate ? formatDateDisplay(d._storyDate) : fmtYear(d);
-  const epLabel = (d._epFrom || d._epTo) ? ` · Ép. ${d._epFrom||'?'}-${d._epTo||'?'}` : '';
+  const epLabel = (d._epFrom || d._epTo) ? ` · ${formatEpRange(d._epFrom, d._epTo)}` : '';
   return `
     <div class="tcard ${p.watched?'watched':''} ${isAdmin?'has-assign':''}" data-card="${d._catalogId}" data-placement="${d._placementId||d._catalogId}" data-colkey="${colKey}" style="--uc:${color};grid-column:${col};grid-row:${row}" onclick="openDetail('${d._catalogId}','${d._placementId||''}')">
       ${isAdmin ? `<span class="tcard-assign" onclick="event.stopPropagation();openAssign('${d._catalogId}')" title="Assigner">⚙</span>` : ''}
@@ -833,8 +875,8 @@ function drawLinks(){
   const activeLinksForDraw = sortMode === 'chrono' ? chronoLinks : links;
   activeLinksForDraw.forEach((l, i) => {
     const category = l.category || 'multiverse';
-    const selA = (category === 'timetravel' && l.aPlacementId) ? `[data-placement="${l.aPlacementId}"]` : `[data-card="${l.a}"]`;
-    const selB = (category === 'timetravel' && l.bPlacementId) ? `[data-placement="${l.bPlacementId}"]` : `[data-card="${l.b}"]`;
+    const selA = (categoryNeedsPlacement(category) && l.aPlacementId) ? `[data-placement="${l.aPlacementId}"]` : `[data-card="${l.a}"]`;
+    const selB = (categoryNeedsPlacement(category) && l.bPlacementId) ? `[data-placement="${l.bPlacementId}"]` : `[data-card="${l.b}"]`;
     const elA = board.querySelector(selA);
     const elB = board.querySelector(selB);
     if (!elA || !elB) return;
@@ -1037,7 +1079,8 @@ function renderPlacementList(){
     <div class="placement-row">
       <select onchange="updatePlacement(${i},'universe',this.value)">${chronoUniverses.map(u=>`<option value="${u.id}" ${p.universe===u.id?'selected':''}>${u.name}</option>`).join('')}</select>
       <input type="text" placeholder="Branche (optionnel)" value="${p.branch||''}" onchange="updatePlacement(${i},'branch',this.value)">
-      <input type="text" class="pdate" placeholder="JJMMAAAA" value="${formatDateForInput(p.storyDate)}" onchange="updatePlacement(${i},'storyDate',this.value)">
+      <input type="text" class="pdate" placeholder="JJMMAAAA" title="Mets un &quot;-&quot; devant l'année pour une date avant J.-C. (ex: -5000)" value="${formatDateForInput(p.storyDate)}" onchange="updatePlacement(${i},'storyDate',this.value)">
+      <input type="number" class="pep" placeholder="Ordre" title="Facultatif : pour départager plusieurs programmes de la même année quand la date n'est pas assez précise" value="${p.yearOrder||''}" onchange="updatePlacement(${i},'yearOrder',this.value)">
       ${isSeries ? `
         <input type="number" class="pep" placeholder="Ép. de" min="1" value="${p.epFrom||''}" onchange="updatePlacement(${i},'epFrom',this.value)">
         <input type="number" class="pep" placeholder="à" min="1" value="${p.epTo||''}" onchange="updatePlacement(${i},'epTo',this.value)">
@@ -1114,6 +1157,26 @@ function confirmBulkAssign(){
     .catch(err => alert('Erreur : ' + err.message));
 }
 
+// ── Programmes sans aucun placement chronologique (mode Chronologique) ──
+function openChronoUnassigned(){
+  document.getElementById('chronoUnassignedSearch').value = '';
+  renderChronoUnassignedList();
+  document.getElementById('chronoUnassignedOverlay').classList.add('open');
+}
+function renderChronoUnassignedList(){
+  const q = document.getElementById('chronoUnassignedSearch').value.toLowerCase();
+  const unassigned = catalog
+    .filter(d => !Array.isArray(d.chronoPlacements) || d.chronoPlacements.length === 0)
+    .filter(d => !q || d.title.toLowerCase().includes(q))
+    .sort((a,b) => a.title.localeCompare(b.title));
+  const box = document.getElementById('chronoUnassignedList');
+  box.innerHTML = unassigned.map(d => `
+    <div class="bulk-row">
+      <span style="flex:1">${d.title} <span style="color:var(--muted)">(${d.type||''}${d.year?' · '+d.year:''})</span></span>
+      <button class="bulk-mini-btn" onclick="closeOverlay('chronoUnassignedOverlay');openAssign('${d.id}')">Assigner</button>
+    </div>`).join('') || '<div class="empty-msg">Tous les programmes ont au moins un placement chronologique.</div>';
+}
+
 // ── Créateur de liens ──
 function linkCollectionName(){ return sortMode === 'chrono' ? 'chronoLinks' : 'links'; }
 function activeLinkList(){ return sortMode === 'chrono' ? chronoLinks : links; }
@@ -1130,14 +1193,21 @@ function openLinkMgr(){
   renderLinkList();
   document.getElementById('linkMgrOverlay').classList.add('open');
 }
+function categoryNeedsPlacement(cat){ return cat === 'timetravel' || cat === 'branchsplit'; }
+function categoryIcon(cat){
+  if (cat === 'timetravel') return '🕐';
+  if (cat === 'branchsplit') return '🌿';
+  return '🌀';
+}
 function onLinkCategoryChange(){
   const cat = sortMode === 'chrono' ? document.getElementById('linkCategory').value : 'multiverse';
-  document.getElementById('linkAPlacementField').style.display = cat==='timetravel' ? 'block' : 'none';
-  document.getElementById('linkBPlacementField').style.display = cat==='timetravel' ? 'block' : 'none';
-  if (cat === 'timetravel') onLinkProgramChange();
+  const needs = categoryNeedsPlacement(cat);
+  document.getElementById('linkAPlacementField').style.display = needs ? 'block' : 'none';
+  document.getElementById('linkBPlacementField').style.display = needs ? 'block' : 'none';
+  if (needs) onLinkProgramChange();
 }
 function onLinkProgramChange(){
-  if (sortMode !== 'chrono' || document.getElementById('linkCategory').value !== 'timetravel') return;
+  if (sortMode !== 'chrono' || !categoryNeedsPlacement(document.getElementById('linkCategory').value)) return;
   fillPlacementSelect('linkA', 'linkAPlacement');
   fillPlacementSelect('linkB', 'linkBPlacement');
 }
@@ -1147,7 +1217,7 @@ function fillPlacementSelect(programSelectId, placementSelectId){
   const placements = (d && d.chronoPlacements) || [];
   const sel = document.getElementById(placementSelectId);
   sel.innerHTML = placements.length
-    ? placements.map(p => `<option value="${p.id}">${formatDateDisplay(p.storyDate)}${(p.epFrom||p.epTo)?` (Ép. ${p.epFrom||'?'}-${p.epTo||'?'})`:''}${p.branch?' — '+p.branch:''}</option>`).join('')
+    ? placements.map(p => `<option value="${p.id}">${formatDateDisplay(p.storyDate)}${(p.epFrom||p.epTo)?` (${formatEpRange(p.epFrom, p.epTo)})`:''}${p.branch?' — '+p.branch:''}</option>`).join('')
     : '<option value="">— Aucun placement chronologique —</option>';
 }
 function renderLinkList(){
@@ -1155,7 +1225,7 @@ function renderLinkList(){
   box.innerHTML = activeLinkList().map(l => {
     const a = catalog.find(d=>d.id===l.a), b = catalog.find(d=>d.id===l.b);
     const arrow = l.type === 'reference' ? '↔' : '→';
-    const catIcon = l.category === 'timetravel' ? '🕐' : (sortMode === 'chrono' ? '🌀' : '');
+    const catIcon = sortMode === 'chrono' ? categoryIcon(l.category) : '';
     return `<div class="link-row">
       <span class="link-txt">${catIcon} ${a?a.title:'?'} ${arrow} ${b?b.title:'?'}${l.label?' — '+l.label:''}</span>
       <button class="link-del" onclick="deleteLink('${l.id}')">🗑</button>
@@ -1172,7 +1242,7 @@ function addLink(){
   if (sortMode === 'chrono'){
     const category = document.getElementById('linkCategory').value;
     entry.category = category;
-    if (category === 'timetravel'){
+    if (categoryNeedsPlacement(category)){
       const aPid = document.getElementById('linkAPlacement').value;
       const bPid = document.getElementById('linkBPlacement').value;
       if (aPid) entry.aPlacementId = aPid;
@@ -1209,7 +1279,7 @@ function openDetail(id, placementId){
     const otherPlacementId = l.a===id ? l.bPlacementId : l.aPlacementId;
     const other = catalog.find(x => x.id === otherId);
     if (!other) return '';
-    const catIcon = l.category === 'timetravel' ? '🕐' : '🌀';
+    const catIcon = categoryIcon(l.category);
     const isSuccessor = l.b === id; // ce programme EST la suite de l'autre
     const label = l.label || (l.type==='reference' ? 'Référence' : (isSuccessor ? 'Précédent' : 'Suite'));
     return `<div class="mlink-badge" onclick="openDetail('${otherId}'${otherPlacementId?`,'${otherPlacementId}'`:''})">${catIcon} ${label} : ${other.title}</div>`;
