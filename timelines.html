@@ -175,7 +175,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   <button class="mini-btn" id="exportPdfBtn" onclick="exportTimelinePNG()" title="Télécharge deux PNG haute résolution (fond sombre + fond clair)">🖼 Exporter en PNG</button>
   <div class="admin-tools" id="adminTools" style="display:none">
     <button class="mini-btn" onclick="openUniverseMgr()">⚙ Univers</button>
-    <button class="mini-btn" onclick="openBulkAssignPicker()">📌 Affecter des programmes</button>
+    <button class="mini-btn" id="bulkAssignBtn" onclick="openBulkAssignPicker()">📌 Affecter des programmes</button>
     <button class="mini-btn" onclick="openLinkMgr()">🔗 Liens</button>
   </div>
 </div>
@@ -208,7 +208,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 <!-- Gestion des univers -->
 <div class="overlay" id="universeMgrOverlay">
   <div class="modal">
-    <div class="modal-title">Gérer les univers</div>
+    <div class="modal-title" id="universeMgrTitle">Gérer les univers</div>
     <div id="universeMgrList"></div>
     <div class="field" style="margin-top:14px">
       <label>Nouvel univers</label>
@@ -247,8 +247,8 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 <!-- Créateur de liens -->
 <div class="overlay" id="linkMgrOverlay">
   <div class="modal">
-    <div class="modal-title">Liens entre programmes</div>
-    <div class="field"><label>Catégorie</label>
+    <div class="modal-title" id="linkMgrTitle">Liens entre programmes</div>
+    <div class="field" id="linkCategoryField"><label>Catégorie</label>
       <select id="linkCategory" onchange="onLinkCategoryChange()">
         <option value="multiverse">🌀 Rencontre multiversielle</option>
         <option value="timetravel">🕐 Voyage dans le temps</option>
@@ -317,8 +317,10 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 let catalog = [];
-let universes = [];
-let links = [];
+let universes = [];        // univers pour le mode "Ordre de sortie"
+let chronoUniverses = [];  // univers pour le mode "Chronologique" — collection indépendante
+let links = [];            // liens pour le mode "Ordre de sortie"
+let chronoLinks = [];      // liens pour le mode "Chronologique" — collection indépendante
 let progress = {};
 let isAdmin = false;
 let filterMode = 'all'; // 'all' | 'mine'
@@ -344,7 +346,9 @@ auth.onAuthStateChanged(user => {
   }
   listenCatalog();
   listenUniverses();
+  listenChronoUniverses();
   listenLinks();
+  listenChronoLinks();
   listenProgress(user.uid);
 });
 
@@ -414,9 +418,21 @@ function listenUniverses(){
     renderBoard();
   });
 }
+function listenChronoUniverses(){
+  db.collection('chronoUniverses').orderBy('order').onSnapshot(snap => {
+    chronoUniverses = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    renderBoard();
+  });
+}
 function listenLinks(){
   db.collection('links').onSnapshot(snap => {
     links = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    renderBoard();
+  });
+}
+function listenChronoLinks(){
+  db.collection('chronoLinks').onSnapshot(snap => {
+    chronoLinks = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     renderBoard();
   });
 }
@@ -449,6 +465,8 @@ let sortMode = 'release'; // 'release' | 'chrono'
 function setSort(mode){
   sortMode = mode;
   document.querySelectorAll('#sortToggle button').forEach((b,i)=>b.classList.toggle('on', (i===0&&mode==='release')||(i===1&&mode==='chrono')));
+  const bulkBtn = document.getElementById('bulkAssignBtn');
+  if (bulkBtn) bulkBtn.style.display = mode === 'chrono' ? 'none' : 'inline-block';
   renderBoard();
 }
 function setFilter(mode){
@@ -485,8 +503,11 @@ function storyDateCompare(a, b){
 
 function renderBoard(){
   const board = document.getElementById('board');
-  if (universes.length === 0){
-    board.innerHTML = '<div class="empty-msg">Aucun univers créé pour l\'instant. Utilise "⚙ Univers" en admin pour commencer.</div>';
+  const activeUniverses = sortMode === 'chrono' ? chronoUniverses : universes;
+  const activeLinks = sortMode === 'chrono' ? chronoLinks : links;
+  if (activeUniverses.length === 0){
+    const label = sortMode === 'chrono' ? 'chronologiques' : "de l'ordre de sortie";
+    board.innerHTML = `<div class="empty-msg">Aucun univers ${label} créé pour l'instant. Utilise "⚙ Univers" en admin pour commencer.</div>`;
     removeLinksSvg();
     return;
   }
@@ -524,7 +545,7 @@ function renderBoard(){
   // Construit la liste des colonnes : tronc de chaque univers, suivi de ses branches
   // — uniquement si au moins un programme y est visible (respecte le filtre en cours)
   const columns = [];
-  universes.forEach(u => {
+  activeUniverses.forEach(u => {
     const trunkItems = items.filter(d => d.universe===u.id && !d.branch);
     if (trunkItems.length > 0) columns.push({ type:'trunk', u, key:u.id });
     const bNames = [...new Set(items.filter(d => d.universe===u.id && d.branch).map(d=>d.branch))];
@@ -650,7 +671,7 @@ function setMobileTab(key){
 
 function cardHtmlMobile(d, color, items, columns){
   const p = progress[d._catalogId] || {};
-  const relatedLinks = links.filter(l => l.a===d._catalogId || l.b===d._catalogId);
+  const relatedLinks = activeLinkList().filter(l => l.a===d._catalogId || l.b===d._catalogId);
   const badges = relatedLinks.map(l => {
     const otherId = l.a===d._catalogId ? l.b : l.a;
     const otherPlacementId = l.a===d._catalogId ? l.bPlacementId : l.aPlacementId;
@@ -777,7 +798,8 @@ function drawLinks(){
   // et ne voyagent que dans les couloirs vides entre lignes/colonnes de la grille.
   // Un lien "voyage dans le temps" cible une tuile précise si spécifiée ;
   // un lien "rencontre multiversielle" cible le programme au sens large. ──
-  links.forEach((l, i) => {
+  const activeLinksForDraw = sortMode === 'chrono' ? chronoLinks : links;
+  activeLinksForDraw.forEach((l, i) => {
     const category = l.category || 'multiverse';
     const selA = (category === 'timetravel' && l.aPlacementId) ? `[data-placement="${l.aPlacementId}"]` : `[data-card="${l.a}"]`;
     const selB = (category === 'timetravel' && l.bPlacementId) ? `[data-placement="${l.bPlacementId}"]` : `[data-card="${l.b}"]`;
@@ -893,15 +915,23 @@ async function exportTimelinePNG(){
   }
 }
 
-// ── Gestion des univers (admin) ──
-function openUniverseMgr(){ renderUniverseMgr(); document.getElementById('universeMgrOverlay').classList.add('open'); }
+// ── Gestion des univers (admin) — collection distincte selon le mode actif ──
+function universeCollectionName(){ return sortMode === 'chrono' ? 'chronoUniverses' : 'universes'; }
+function activeUniverseList(){ return sortMode === 'chrono' ? chronoUniverses : universes; }
+
+function openUniverseMgr(){
+  document.getElementById('universeMgrTitle').textContent = sortMode === 'chrono' ? 'Gérer les univers (Chronologique)' : 'Gérer les univers (Ordre de sortie)';
+  renderUniverseMgr();
+  document.getElementById('universeMgrOverlay').classList.add('open');
+}
 function renderUniverseMgr(){
+  const list = activeUniverseList();
   const box = document.getElementById('universeMgrList');
-  box.innerHTML = universes.map((u,i) => `
+  box.innerHTML = list.map((u,i) => `
     <div class="unimgr-row">
       <div class="unimgr-order">
         <button onclick="moveUniverse('${u.id}',-1)" ${i===0?'disabled':''}>▲</button>
-        <button onclick="moveUniverse('${u.id}',1)" ${i===universes.length-1?'disabled':''}>▼</button>
+        <button onclick="moveUniverse('${u.id}',1)" ${i===list.length-1?'disabled':''}>▼</button>
       </div>
       <input type="color" value="${u.color}" onchange="recolorUniverse('${u.id}', this.value)">
       <input type="text" value="${u.name}" onchange="renameUniverse('${u.id}', this.value)">
@@ -912,45 +942,43 @@ function addUniverse(){
   const name = document.getElementById('newUniName').value.trim();
   const color = document.getElementById('newUniColor').value;
   if (!name) return;
-  const order = universes.length;
-  db.collection('universes').add({ name, color, order }).then(() => { document.getElementById('newUniName').value=''; });
+  const order = activeUniverseList().length;
+  db.collection(universeCollectionName()).add({ name, color, order }).then(() => { document.getElementById('newUniName').value=''; });
 }
-function recolorUniverse(id, color){ db.collection('universes').doc(id).update({ color }); }
-function renameUniverse(id, name){ name=name.trim(); if(name) db.collection('universes').doc(id).update({ name }); }
+function recolorUniverse(id, color){ db.collection(universeCollectionName()).doc(id).update({ color }); }
+function renameUniverse(id, name){ name=name.trim(); if(name) db.collection(universeCollectionName()).doc(id).update({ name }); }
 async function moveUniverse(id, dir){
-  const idx = universes.findIndex(u => u.id === id);
+  const list = activeUniverseList();
+  const idx = list.findIndex(u => u.id === id);
   const swapIdx = idx + dir;
-  if (swapIdx < 0 || swapIdx >= universes.length) return;
-  const a = universes[idx], b = universes[swapIdx];
+  if (swapIdx < 0 || swapIdx >= list.length) return;
+  const a = list[idx], b = list[swapIdx];
   const batch = db.batch();
-  batch.update(db.collection('universes').doc(a.id), { order: b.order });
-  batch.update(db.collection('universes').doc(b.id), { order: a.order });
+  const coll = universeCollectionName();
+  batch.update(db.collection(coll).doc(a.id), { order: b.order });
+  batch.update(db.collection(coll).doc(b.id), { order: a.order });
   await batch.commit();
 }
 async function deleteUniverse(id, name){
-  const affectedIds = new Set([
-    ...catalog.filter(d => d.universe === id).map(d => d.id),
-    ...catalog.filter(d => Array.isArray(d.chronoPlacements) && d.chronoPlacements.some(p => p.universe === id)).map(d => d.id)
-  ]);
-  const msg = affectedIds.size > 0
-    ? `${affectedIds.size} programme(s) référencent "${name}" (ordre de sortie et/ou placements chronologiques) et perdront cette assignation. Continuer ?`
+  const isChrono = sortMode === 'chrono';
+  const affectedIds = isChrono
+    ? catalog.filter(d => Array.isArray(d.chronoPlacements) && d.chronoPlacements.some(p => p.universe === id)).map(d => d.id)
+    : catalog.filter(d => d.universe === id).map(d => d.id);
+  const msg = affectedIds.length > 0
+    ? `${affectedIds.length} programme(s) référencent "${name}" et perdront cette assignation. Continuer ?`
     : `Supprimer l'univers "${name}" ?`;
   if (!confirm(msg)) return;
   const batch = db.batch();
   affectedIds.forEach(cid => {
     const d = catalog.find(x => x.id === cid);
-    const update = {};
-    if (d.universe === id){
-      update.universe = firebase.firestore.FieldValue.delete();
-      update.branch = firebase.firestore.FieldValue.delete();
-    }
-    if (Array.isArray(d.chronoPlacements) && d.chronoPlacements.some(p => p.universe === id)){
+    if (isChrono){
       const cleaned = d.chronoPlacements.filter(p => p.universe !== id);
-      update.chronoPlacements = cleaned.length ? cleaned : firebase.firestore.FieldValue.delete();
+      batch.update(db.collection('catalog').doc(cid), { chronoPlacements: cleaned.length ? cleaned : firebase.firestore.FieldValue.delete() });
+    } else {
+      batch.update(db.collection('catalog').doc(cid), { universe: firebase.firestore.FieldValue.delete(), branch: firebase.firestore.FieldValue.delete() });
     }
-    batch.update(db.collection('catalog').doc(cid), update);
   });
-  batch.delete(db.collection('universes').doc(id));
+  batch.delete(db.collection(universeCollectionName()).doc(id));
   await batch.commit();
 }
 
@@ -973,7 +1001,7 @@ function renderPlacementList(){
   const box = document.getElementById('placementList');
   box.innerHTML = currentAssignPlacements.map((p, i) => `
     <div class="placement-row">
-      <select onchange="updatePlacement(${i},'universe',this.value)">${universes.map(u=>`<option value="${u.id}" ${p.universe===u.id?'selected':''}>${u.name}</option>`).join('')}</select>
+      <select onchange="updatePlacement(${i},'universe',this.value)">${chronoUniverses.map(u=>`<option value="${u.id}" ${p.universe===u.id?'selected':''}>${u.name}</option>`).join('')}</select>
       <input type="text" placeholder="Branche (optionnel)" value="${p.branch||''}" onchange="updatePlacement(${i},'branch',this.value)">
       <input type="text" class="pdate" placeholder="AAAA[-MM[-JJ]]" value="${p.storyDate||''}" onchange="updatePlacement(${i},'storyDate',this.value)">
       <button class="placement-del" onclick="removePlacementRow(${i})">🗑</button>
@@ -981,7 +1009,7 @@ function renderPlacementList(){
 }
 function updatePlacement(i, field, value){ currentAssignPlacements[i][field] = value.trim(); }
 function addPlacementRow(){
-  currentAssignPlacements.push({ id: 'p_'+Date.now()+'_'+Math.floor(Math.random()*1000), universe: universes[0]?.id||'', branch:'', storyDate:'' });
+  currentAssignPlacements.push({ id: 'p_'+Date.now()+'_'+Math.floor(Math.random()*1000), universe: chronoUniverses[0]?.id||'', branch:'', storyDate:'' });
   renderPlacementList();
 }
 function removePlacementRow(i){ currentAssignPlacements.splice(i,1); renderPlacementList(); }
@@ -1046,24 +1074,29 @@ function confirmBulkAssign(){
 }
 
 // ── Créateur de liens ──
+function linkCollectionName(){ return sortMode === 'chrono' ? 'chronoLinks' : 'links'; }
+function activeLinkList(){ return sortMode === 'chrono' ? chronoLinks : links; }
+
 function openLinkMgr(){
   const opts = catalog.slice().sort((a,b)=>a.title.localeCompare(b.title)).map(d=>`<option value="${d.id}">${d.title}</option>`).join('');
   document.getElementById('linkA').innerHTML = opts;
   document.getElementById('linkB').innerHTML = opts;
   document.getElementById('linkLabel').value = '';
+  document.getElementById('linkMgrTitle').textContent = sortMode === 'chrono' ? 'Liens entre programmes (Chronologique)' : 'Liens entre programmes (Ordre de sortie)';
+  document.getElementById('linkCategoryField').style.display = sortMode === 'chrono' ? 'block' : 'none';
   document.getElementById('linkCategory').value = 'multiverse';
   onLinkCategoryChange();
   renderLinkList();
   document.getElementById('linkMgrOverlay').classList.add('open');
 }
 function onLinkCategoryChange(){
-  const cat = document.getElementById('linkCategory').value;
+  const cat = sortMode === 'chrono' ? document.getElementById('linkCategory').value : 'multiverse';
   document.getElementById('linkAPlacementField').style.display = cat==='timetravel' ? 'block' : 'none';
   document.getElementById('linkBPlacementField').style.display = cat==='timetravel' ? 'block' : 'none';
   if (cat === 'timetravel') onLinkProgramChange();
 }
 function onLinkProgramChange(){
-  if (document.getElementById('linkCategory').value !== 'timetravel') return;
+  if (sortMode !== 'chrono' || document.getElementById('linkCategory').value !== 'timetravel') return;
   fillPlacementSelect('linkA', 'linkAPlacement');
   fillPlacementSelect('linkB', 'linkBPlacement');
 }
@@ -1078,10 +1111,10 @@ function fillPlacementSelect(programSelectId, placementSelectId){
 }
 function renderLinkList(){
   const box = document.getElementById('linkList');
-  box.innerHTML = links.map(l => {
+  box.innerHTML = activeLinkList().map(l => {
     const a = catalog.find(d=>d.id===l.a), b = catalog.find(d=>d.id===l.b);
     const arrow = l.type === 'reference' ? '↔' : '→';
-    const catIcon = l.category === 'timetravel' ? '🕐' : '🌀';
+    const catIcon = l.category === 'timetravel' ? '🕐' : (sortMode === 'chrono' ? '🌀' : '');
     return `<div class="link-row">
       <span class="link-txt">${catIcon} ${a?a.title:'?'} ${arrow} ${b?b.title:'?'}${l.label?' — '+l.label:''}</span>
       <button class="link-del" onclick="deleteLink('${l.id}')">🗑</button>
@@ -1092,21 +1125,24 @@ function addLink(){
   const a = document.getElementById('linkA').value;
   const b = document.getElementById('linkB').value;
   const type = document.getElementById('linkType').value;
-  const category = document.getElementById('linkCategory').value;
   const label = document.getElementById('linkLabel').value.trim();
   if (!a || !b || a === b) return alert('Choisis deux programmes différents.');
-  const entry = { a, b, type, category, label };
-  if (category === 'timetravel'){
-    const aPid = document.getElementById('linkAPlacement').value;
-    const bPid = document.getElementById('linkBPlacement').value;
-    if (aPid) entry.aPlacementId = aPid;
-    if (bPid) entry.bPlacementId = bPid;
+  const entry = { a, b, type, label };
+  if (sortMode === 'chrono'){
+    const category = document.getElementById('linkCategory').value;
+    entry.category = category;
+    if (category === 'timetravel'){
+      const aPid = document.getElementById('linkAPlacement').value;
+      const bPid = document.getElementById('linkBPlacement').value;
+      if (aPid) entry.aPlacementId = aPid;
+      if (bPid) entry.bPlacementId = bPid;
+    }
   }
-  db.collection('links').add(entry).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
+  db.collection(linkCollectionName()).add(entry).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
 }
 function deleteLink(id){
   if (!confirm('Supprimer ce lien ?')) return;
-  db.collection('links').doc(id).delete();
+  db.collection(linkCollectionName()).doc(id).delete();
 }
 
 // ── Fiche programme simplifiée ──
@@ -1126,7 +1162,7 @@ function openDetail(id, placementId){
   document.getElementById('detailPrevBtn').disabled = !navPrevOf[navKey];
   document.getElementById('detailNextBtn').disabled = !navNextOf[navKey];
 
-  const relLinks = links.filter(l => l.a===id || l.b===id);
+  const relLinks = activeLinkList().filter(l => l.a===id || l.b===id);
   document.getElementById('detailLinks').innerHTML = relLinks.map(l => {
     const otherId = l.a===id ? l.b : l.a;
     const otherPlacementId = l.a===id ? l.bPlacementId : l.aPlacementId;
