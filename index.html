@@ -1231,13 +1231,16 @@ function effectiveChronoInfo(d){
     const parts = (d.releaseDate||'').split('-');
     return { year: parseInt(parts[0],10)||0, month: parts[1]?parseInt(parts[1],10):null, day: parts[2]?parseInt(parts[2],10):null, yearOrder: null, releaseDate: d.releaseDate||'' };
   }
-  let best = placements[0], bestP = parseStoryDateMarathon(best.storyDate);
-  placements.forEach(p => {
+  // Clé composite (année, mois, jour puis ordre manuel en dernier recours) pour trouver
+  // le placement le plus ancien de ce programme, même en cas d'égalité de date exacte.
+  const keyOf = p => {
     const pp = parseStoryDateMarathon(p.storyDate);
-    const pKey = pp.year*372 + (pp.month||0)*31 + (pp.day||0);
-    const bKey = bestP.year*372 + (bestP.month||0)*31 + (bestP.day||0);
-    if (pKey < bKey){ best = p; bestP = pp; }
-  });
+    const yo = (p.yearOrder!=null && p.yearOrder!=='') ? Number(p.yearOrder) : 0;
+    return pp.year*372000 + (pp.month||0)*31000 + (pp.day||0)*1000 + yo;
+  };
+  let best = placements[0];
+  placements.forEach(p => { if (keyOf(p) < keyOf(best)) best = p; });
+  const bestP = parseStoryDateMarathon(best.storyDate);
   return { year: bestP.year, month: bestP.month, day: bestP.day, yearOrder: (best.yearOrder!=null && best.yearOrder!=='') ? Number(best.yearOrder) : null, releaseDate: d.releaseDate||'' };
 }
 function chronoCompareItems(a, b){
@@ -1254,20 +1257,33 @@ function chronoCompareItems(a, b){
 // ── Ordre chronologique "logique" pour la Mosaïque : au lieu de trier uniquement par
 // date, on respecte les contraintes de dépendance (fil automatique + liens manuels de
 // type "Suite") construites sur la page Timelines, et on ne se rabat sur la date
-// narrative/de sortie que pour départager des programmes sans lien entre eux. ──
+// narrative/de sortie que pour départager des programmes sans lien entre eux.
+//
+// Important : le graphe se construit au niveau de chaque PAQUET (placement), pas au
+// niveau du programme — sinon une série avec plusieurs paquets d'épisodes à des
+// époques différentes se retrouverait à la fois "avant" et "après" d'autres
+// programmes intercalés entre ses paquets, ce qui créerait une contradiction
+// (un cycle) et casserait l'ordre. Une fois le tri fait au niveau des paquets, on le
+// ramène à un ordre de programmes : chaque programme prend la position de son tout
+// premier paquet dans la séquence triée. ──
 function buildChronoDependencyOrder(items){
-  // 1. Regroupe tous les placements (de tout le catalogue, pas juste "items") par
-  // couple univers::branche, pour retrouver le fil automatique de chaque colonne.
-  const groups = {};
+  const groups = {}; // clé univers::branche -> liste de paquets
+  const allPlacements = []; // { nodeId, catalogId, storyDate, yearOrder }
   catalog.forEach(d => {
     (d.chronoPlacements||[]).forEach(p => {
+      const nodeId = d.id + '::' + p.id;
       const key = p.universe + '::' + (p.branch||'');
-      (groups[key] = groups[key]||[]).push({ catalogId: d.id, storyDate: p.storyDate, yearOrder: p.yearOrder });
+      const entry = { nodeId, catalogId: d.id, storyDate: p.storyDate, yearOrder: p.yearOrder };
+      allPlacements.push(entry);
+      (groups[key] = groups[key]||[]).push(entry);
     });
   });
-  const edges = {}; // catalogId -> Set des programmes qui doivent être vus APRÈS
+
+  const edges = {}; // nodeId -> Set de nodeId qui doivent être vus APRÈS
   const addEdge = (a, b) => { if (!a || !b || a === b) return; (edges[a] = edges[a] || new Set()).add(b); };
 
+  // 1. Fil automatique : dans chaque colonne (univers::branche), relie les paquets
+  // consécutifs triés par date narrative.
   Object.values(groups).forEach(list => {
     list.sort((a, b) => {
       const pa = parseStoryDateMarathon(a.storyDate), pb = parseStoryDateMarathon(b.storyDate);
@@ -1279,45 +1295,68 @@ function buildChronoDependencyOrder(items){
       if (a.yearOrder != null && b.yearOrder != null && a.yearOrder !== b.yearOrder) return a.yearOrder - b.yearOrder;
       return 0;
     });
-    for (let i = 0; i < list.length - 1; i++) addEdge(list[i].catalogId, list[i+1].catalogId);
+    for (let i = 0; i < list.length - 1; i++) addEdge(list[i].nodeId, list[i+1].nodeId);
   });
 
-  // 2. Liens manuels "Suite" (toutes catégories confondues) — les "Référence" ne
-  // contraignent pas l'ordre, ce sont de simples renvois informatifs.
-  chronoLinks.forEach(l => { if (l.type !== 'reference') addEdge(l.a, l.b); });
+  // 2. Liens manuels "Suite" — si le lien précise une époque exacte, on cible ce
+  // paquet-là uniquement ; sinon, la contrainte s'applique à TOUS les paquets du
+  // programme concerné (pour rester cohérente peu importe le paquet en jeu).
+  const nodesOfCatalog = {};
+  allPlacements.forEach(p => (nodesOfCatalog[p.catalogId] = nodesOfCatalog[p.catalogId]||[]).push(p.nodeId));
+  chronoLinks.forEach(l => {
+    if (l.type === 'reference') return;
+    const aNodes = l.aPlacementId ? [l.a+'::'+l.aPlacementId] : (nodesOfCatalog[l.a] || [l.a]);
+    const bNodes = l.bPlacementId ? [l.b+'::'+l.bPlacementId] : (nodesOfCatalog[l.b] || [l.b]);
+    aNodes.forEach(x => bNodes.forEach(y => addEdge(x, y)));
+  });
 
-  // 3. Tri topologique (Kahn) : à chaque étape, parmi les programmes dont toutes les
-  // dépendances sont déjà satisfaites, on choisit le plus ancien chronologiquement —
-  // ce qui garantit qu'un programme comme Doomsday, vers lequel presque tout converge,
-  // se retrouve mécaniquement tout à la fin.
-  const ids = items.map(d => d.id);
-  const idSet = new Set(ids);
+  // 3. Tri topologique (Kahn) au niveau des paquets — un programme sans aucun paquet
+  // chronologique reste son propre nœud (son catalogId directement).
+  const noPlacementItems = items.filter(d => !((d.chronoPlacements||[]).length));
+  const nodeMeta = {};
+  allPlacements.forEach(p => nodeMeta[p.nodeId] = { catalogId: p.catalogId });
+  noPlacementItems.forEach(d => nodeMeta[d.id] = { catalogId: d.id });
+
+  const allNodeIds = [...new Set([...allPlacements.map(p=>p.nodeId), ...noPlacementItems.map(d=>d.id)])];
+  const nodeIdSet = new Set(allNodeIds);
   const itemById = {}; items.forEach(d => itemById[d.id] = d);
-  const inDegree = {}; ids.forEach(id => inDegree[id] = 0);
+
+  const inDegree = {}; allNodeIds.forEach(id => inDegree[id] = 0);
   Object.keys(edges).forEach(a => {
-    if (!idSet.has(a)) return;
-    edges[a].forEach(b => { if (idSet.has(b)) inDegree[b] = (inDegree[b]||0) + 1; });
+    if (!nodeIdSet.has(a)) return;
+    edges[a].forEach(b => { if (nodeIdSet.has(b)) inDegree[b] = (inDegree[b]||0) + 1; });
   });
 
-  const remaining = new Set(ids);
-  let available = ids.filter(id => inDegree[id] === 0);
-  const result = [];
+  const compareNodes = (x, y) => chronoCompareItems(itemById[nodeMeta[x].catalogId] || {}, itemById[nodeMeta[y].catalogId] || {});
+  const remaining = new Set(allNodeIds);
+  let available = allNodeIds.filter(id => inDegree[id] === 0);
+  const orderedNodes = [];
   while (available.length){
-    available.sort((x,y) => chronoCompareItems(itemById[x], itemById[y]));
+    available.sort(compareNodes);
     const id = available.shift();
     if (!remaining.has(id)) continue;
     remaining.delete(id);
-    result.push(id);
+    orderedNodes.push(id);
     (edges[id]||new Set()).forEach(next => {
-      if (!idSet.has(next)) return;
+      if (!nodeIdSet.has(next)) return;
       inDegree[next]--;
       if (inDegree[next] === 0) available.push(next);
     });
   }
-  // Sécurité anti-cycle (ne devrait pas arriver avec des liens cohérents) : ce qui
-  // n'a pas pu être ordonné est ajouté à la fin, trié chronologiquement.
-  if (remaining.size) [...remaining].sort((x,y) => chronoCompareItems(itemById[x], itemById[y])).forEach(id => result.push(id));
-  return result.map(id => itemById[id]);
+  if (remaining.size) [...remaining].sort(compareNodes).forEach(id => orderedNodes.push(id));
+
+  // 4. Ramène l'ordre des paquets à un ordre de programmes : chaque programme prend
+  // la position de son tout premier paquet dans la séquence triée.
+  const seen = new Set();
+  const result = [];
+  orderedNodes.forEach(nodeId => {
+    const cid = nodeMeta[nodeId].catalogId;
+    if (seen.has(cid) || !itemById[cid]) return;
+    seen.add(cid);
+    result.push(itemById[cid]);
+  });
+  items.forEach(d => { if (!seen.has(d.id)){ seen.add(d.id); result.push(d); } });
+  return result;
 }
 
 function scrollToFirstUnwatched(){
