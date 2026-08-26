@@ -257,8 +257,10 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="modal-title" id="linkMgrTitle">Liens entre programmes</div>
     <div class="field" id="linkCategoryField"><label>Catégorie</label>
       <select id="linkCategory" onchange="onLinkCategoryChange()">
-        <option value="multiverse">🌀 Rencontre multiversielle</option>
-        <option value="timetravel">🕐 Voyage dans le temps</option>
+        <option value="multiverse_ref">🌀 Référence multiversielle</option>
+        <option value="multiverse_seq">🌀➡️ Suite multiversielle</option>
+        <option value="timetravel_ref">🕐 Référence Voyage dans le temps</option>
+        <option value="timetravel_seq">🕐➡️ Suite Voyage dans le temps</option>
         <option value="branchsplit">🌿 Scission de branche</option>
       </select>
     </div>
@@ -266,7 +268,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="field" id="linkAPlacementField" style="display:none"><label>Époque de A</label><select id="linkAPlacement"></select></div>
     <div class="field"><label>Programme B</label><select id="linkB" onchange="onLinkProgramChange()"></select></div>
     <div class="field" id="linkBPlacementField" style="display:none"><label>Époque de B</label><select id="linkBPlacement"></select></div>
-    <div class="field"><label>Type de relation</label>
+    <div class="field" id="linkTypeField"><label>Type de relation</label>
       <select id="linkType">
         <option value="sequel">B est la suite directe de A (flèche pleine)</option>
         <option value="reference">Simple référence croisée (pointillé)</option>
@@ -1221,10 +1223,23 @@ function openLinkMgr(){
   document.getElementById('linkLabel').value = '';
   document.getElementById('linkMgrTitle').textContent = sortMode === 'chrono' ? 'Liens entre programmes (Chronologique)' : 'Liens entre programmes (Ordre de sortie)';
   document.getElementById('linkCategoryField').style.display = sortMode === 'chrono' ? 'block' : 'none';
-  document.getElementById('linkCategory').value = 'multiverse';
+  document.getElementById('linkTypeField').style.display = sortMode === 'chrono' ? 'none' : 'block';
+  document.getElementById('linkCategory').value = 'multiverse_ref';
   onLinkCategoryChange();
   renderLinkList();
   document.getElementById('linkMgrOverlay').classList.add('open');
+}
+// Les options du menu "Catégorie" combinent la catégorie ET le type de relation
+// (suite ou simple référence) en un seul choix, pour éviter de jongler entre deux menus.
+function decodeLinkCategoryOption(val){
+  const map = {
+    multiverse_ref:  { category:'multiverse',  type:'reference' },
+    multiverse_seq:  { category:'multiverse',  type:'sequel' },
+    timetravel_ref:  { category:'timetravel',  type:'reference' },
+    timetravel_seq:  { category:'timetravel',  type:'sequel' },
+    branchsplit:     { category:'branchsplit', type:'sequel' }
+  };
+  return map[val] || map.multiverse_ref;
 }
 function categoryNeedsPlacement(cat){ return cat === 'timetravel' || cat === 'branchsplit'; }
 function categoryIcon(cat){
@@ -1233,14 +1248,16 @@ function categoryIcon(cat){
   return '🌀';
 }
 function onLinkCategoryChange(){
-  const cat = sortMode === 'chrono' ? document.getElementById('linkCategory').value : 'multiverse';
-  const needs = categoryNeedsPlacement(cat);
+  const decoded = sortMode === 'chrono' ? decodeLinkCategoryOption(document.getElementById('linkCategory').value) : { category:'multiverse' };
+  const needs = categoryNeedsPlacement(decoded.category);
   document.getElementById('linkAPlacementField').style.display = needs ? 'block' : 'none';
   document.getElementById('linkBPlacementField').style.display = needs ? 'block' : 'none';
   if (needs) onLinkProgramChange();
 }
 function onLinkProgramChange(){
-  if (sortMode !== 'chrono' || !categoryNeedsPlacement(document.getElementById('linkCategory').value)) return;
+  if (sortMode !== 'chrono') return;
+  const decoded = decodeLinkCategoryOption(document.getElementById('linkCategory').value);
+  if (!categoryNeedsPlacement(decoded.category)) return;
   fillPlacementSelect('linkA', 'linkAPlacement');
   fillPlacementSelect('linkB', 'linkBPlacement');
 }
@@ -1268,20 +1285,22 @@ function renderLinkList(){
 function addLink(){
   const a = document.getElementById('linkA').value;
   const b = document.getElementById('linkB').value;
-  const type = document.getElementById('linkType').value;
   const label = document.getElementById('linkLabel').value.trim();
   if (!a || !b) return alert('Choisis deux programmes.');
-  const entry = { a, b, type, label };
+  const entry = { a, b, label };
   let aPid = null, bPid = null;
   if (sortMode === 'chrono'){
-    const category = document.getElementById('linkCategory').value;
-    entry.category = category;
-    if (categoryNeedsPlacement(category)){
+    const decoded = decodeLinkCategoryOption(document.getElementById('linkCategory').value);
+    entry.category = decoded.category;
+    entry.type = decoded.type;
+    if (categoryNeedsPlacement(decoded.category)){
       aPid = document.getElementById('linkAPlacement').value || null;
       bPid = document.getElementById('linkBPlacement').value || null;
       if (aPid) entry.aPlacementId = aPid;
       if (bPid) entry.bPlacementId = bPid;
     }
+  } else {
+    entry.type = document.getElementById('linkType').value;
   }
   // Un même programme peut être relié à lui-même s'il s'agit de deux tuiles (époques)
   // différentes — seul un lien vers la tuile exactement identique n'a pas de sens.
