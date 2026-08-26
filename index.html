@@ -271,9 +271,14 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   <div class="controls-row">
     <input type="text" class="search" id="searchInput" placeholder="Rechercher..." oninput="render()">
     <div class="view-icons">
-      <button class="icon-toggle on" title="Vue par studios" onclick="setView('studio',this)">☰</button>
-      <button class="icon-toggle" title="Vue mosaïque" onclick="setView('mosaic',this)">▦</button>
+      <button class="icon-toggle on" title="Vue mosaïque" onclick="setView('mosaic',this)">▦</button>
       <button class="icon-toggle" title="Tier List" onclick="setView('tier',this)">🏆</button>
+    </div>
+  </div>
+  <div class="controls-row" id="mosaicSortRow">
+    <div class="segmented">
+      <button class="on" id="mosaicSortReleaseBtn" onclick="setMosaicSort('release')">Ordre de sortie</button>
+      <button id="mosaicSortChronoBtn" onclick="setMosaicSort('chrono')">Chronologique</button>
     </div>
   </div>
   <div class="controls-row">
@@ -480,7 +485,7 @@ let studios = []; // [{id, name, color}]
 let catalog = [];      // depuis Firestore, collection 'catalog'
 let progress = {};     // depuis Firestore, collection 'progress/{uid}/items'
 let isAdmin = false;
-let currentView = 'studio';
+let currentView = 'mosaic';
 let currentDetailId = null;
 let collapsed = {};
 
@@ -512,6 +517,7 @@ auth.onAuthStateChanged(user => {
   listenProgress(user.uid);
   listenUniverses();
   listenLinks();
+  listenChronoLinks();
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -535,6 +541,7 @@ function showPage(page){
 // ═══════════════════════════════════════════════════════════════
 let universes = [];
 let links = [];
+let chronoLinks = []; // liens de la page Timelines, uniquement pour construire l'ordre chronologique de la Mosaïque
 let sortMode = 'chrono'; // 'chrono' | 'release'
 let tlFilterMode = 'all'; // 'all' | 'mine'
 
@@ -548,6 +555,12 @@ function listenLinks(){
   db.collection('links').onSnapshot(snap => {
     links = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if (currentPage === 'timelines') renderBoard();
+  });
+}
+function listenChronoLinks(){
+  db.collection('chronoLinks').onSnapshot(snap => {
+    chronoLinks = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if (currentPage === 'marathon' && currentView === 'mosaic' && mosaicSort === 'chrono') render();
   });
 }
 
@@ -969,13 +982,6 @@ function setProgramWatched(d, value){
   return progressRef(d.id).set(update, { merge:true });
 }
 
-function markStudioWatched(studio, value){
-  const items = catalog.filter(d => d.studio === studio && (currentScope !== 'mine' || isIncluded(d.id)));
-  if (items.length === 0) return;
-  if (!confirm(`Marquer les ${items.length} programme(s) de "${studio}" comme vus ?`)) return;
-  Promise.all(items.map(d => setProgramWatched(d, value))).catch(err => alert('Erreur : ' + err.message));
-}
-
 // ── Réinitialiser tout le marathon perso (garde la sélection et les notes) ──
 async function resetMarathon(){
   if (!auth.currentUser) return;
@@ -1196,12 +1202,127 @@ function setView(v, btn){
   currentView = v;
   document.querySelectorAll('.view-icons .icon-toggle').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
+  document.getElementById('mosaicSortRow').style.display = v === 'mosaic' ? 'flex' : 'none';
   render();
   if (v === 'mosaic') scrollToFirstUnwatched();
 }
 
+let mosaicSort = localStorage.getItem('mm-mosaic-sort') || 'release';
+function setMosaicSort(mode){
+  mosaicSort = mode;
+  localStorage.setItem('mm-mosaic-sort', mode);
+  document.getElementById('mosaicSortReleaseBtn').classList.toggle('on', mode === 'release');
+  document.getElementById('mosaicSortChronoBtn').classList.toggle('on', mode === 'chrono');
+  render();
+}
+// Analyse une date narrative (identique à celle de la page Timelines) — gère
+// les précisions partielles (année seule, mois+année) et les années av. J.-C.
+function parseStoryDateMarathon(s){
+  const m = /^(-?\d+)(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/.exec(s || '');
+  if (!m) return { year: 0, month: null, day: null };
+  return { year: parseInt(m[1],10)||0, month: m[2]?parseInt(m[2],10):null, day: m[3]?parseInt(m[3],10):null };
+}
+// Position chronologique effective d'un programme : le plus ancien de ses placements
+// s'il en a (utile pour les séries à plusieurs paquets d'épisodes/époques), sinon
+// repli sur sa date de sortie réelle.
+function effectiveChronoInfo(d){
+  const placements = Array.isArray(d.chronoPlacements) ? d.chronoPlacements : [];
+  if (placements.length === 0){
+    const parts = (d.releaseDate||'').split('-');
+    return { year: parseInt(parts[0],10)||0, month: parts[1]?parseInt(parts[1],10):null, day: parts[2]?parseInt(parts[2],10):null, yearOrder: null, releaseDate: d.releaseDate||'' };
+  }
+  let best = placements[0], bestP = parseStoryDateMarathon(best.storyDate);
+  placements.forEach(p => {
+    const pp = parseStoryDateMarathon(p.storyDate);
+    const pKey = pp.year*372 + (pp.month||0)*31 + (pp.day||0);
+    const bKey = bestP.year*372 + (bestP.month||0)*31 + (bestP.day||0);
+    if (pKey < bKey){ best = p; bestP = pp; }
+  });
+  return { year: bestP.year, month: bestP.month, day: bestP.day, yearOrder: (best.yearOrder!=null && best.yearOrder!=='') ? Number(best.yearOrder) : null, releaseDate: d.releaseDate||'' };
+}
+function chronoCompareItems(a, b){
+  const ia = effectiveChronoInfo(a), ib = effectiveChronoInfo(b);
+  if (ia.year !== ib.year) return ia.year - ib.year;
+  if (ia.month != null && ib.month != null){
+    if (ia.month !== ib.month) return ia.month - ib.month;
+    if (ia.day != null && ib.day != null && ia.day !== ib.day) return ia.day - ib.day;
+  }
+  if (ia.yearOrder != null && ib.yearOrder != null && ia.yearOrder !== ib.yearOrder) return ia.yearOrder - ib.yearOrder;
+  return (ia.releaseDate||'').localeCompare(ib.releaseDate||'');
+}
+
+// ── Ordre chronologique "logique" pour la Mosaïque : au lieu de trier uniquement par
+// date, on respecte les contraintes de dépendance (fil automatique + liens manuels de
+// type "Suite") construites sur la page Timelines, et on ne se rabat sur la date
+// narrative/de sortie que pour départager des programmes sans lien entre eux. ──
+function buildChronoDependencyOrder(items){
+  // 1. Regroupe tous les placements (de tout le catalogue, pas juste "items") par
+  // couple univers::branche, pour retrouver le fil automatique de chaque colonne.
+  const groups = {};
+  catalog.forEach(d => {
+    (d.chronoPlacements||[]).forEach(p => {
+      const key = p.universe + '::' + (p.branch||'');
+      (groups[key] = groups[key]||[]).push({ catalogId: d.id, storyDate: p.storyDate, yearOrder: p.yearOrder });
+    });
+  });
+  const edges = {}; // catalogId -> Set des programmes qui doivent être vus APRÈS
+  const addEdge = (a, b) => { if (!a || !b || a === b) return; (edges[a] = edges[a] || new Set()).add(b); };
+
+  Object.values(groups).forEach(list => {
+    list.sort((a, b) => {
+      const pa = parseStoryDateMarathon(a.storyDate), pb = parseStoryDateMarathon(b.storyDate);
+      if (pa.year !== pb.year) return pa.year - pb.year;
+      if (pa.month != null && pb.month != null){
+        if (pa.month !== pb.month) return pa.month - pb.month;
+        if (pa.day != null && pb.day != null && pa.day !== pb.day) return pa.day - pb.day;
+      }
+      if (a.yearOrder != null && b.yearOrder != null && a.yearOrder !== b.yearOrder) return a.yearOrder - b.yearOrder;
+      return 0;
+    });
+    for (let i = 0; i < list.length - 1; i++) addEdge(list[i].catalogId, list[i+1].catalogId);
+  });
+
+  // 2. Liens manuels "Suite" (toutes catégories confondues) — les "Référence" ne
+  // contraignent pas l'ordre, ce sont de simples renvois informatifs.
+  chronoLinks.forEach(l => { if (l.type !== 'reference') addEdge(l.a, l.b); });
+
+  // 3. Tri topologique (Kahn) : à chaque étape, parmi les programmes dont toutes les
+  // dépendances sont déjà satisfaites, on choisit le plus ancien chronologiquement —
+  // ce qui garantit qu'un programme comme Doomsday, vers lequel presque tout converge,
+  // se retrouve mécaniquement tout à la fin.
+  const ids = items.map(d => d.id);
+  const idSet = new Set(ids);
+  const itemById = {}; items.forEach(d => itemById[d.id] = d);
+  const inDegree = {}; ids.forEach(id => inDegree[id] = 0);
+  Object.keys(edges).forEach(a => {
+    if (!idSet.has(a)) return;
+    edges[a].forEach(b => { if (idSet.has(b)) inDegree[b] = (inDegree[b]||0) + 1; });
+  });
+
+  const remaining = new Set(ids);
+  let available = ids.filter(id => inDegree[id] === 0);
+  const result = [];
+  while (available.length){
+    available.sort((x,y) => chronoCompareItems(itemById[x], itemById[y]));
+    const id = available.shift();
+    if (!remaining.has(id)) continue;
+    remaining.delete(id);
+    result.push(id);
+    (edges[id]||new Set()).forEach(next => {
+      if (!idSet.has(next)) return;
+      inDegree[next]--;
+      if (inDegree[next] === 0) available.push(next);
+    });
+  }
+  // Sécurité anti-cycle (ne devrait pas arriver avec des liens cohérents) : ce qui
+  // n'a pas pu être ordonné est ajouté à la fin, trié chronologiquement.
+  if (remaining.size) [...remaining].sort((x,y) => chronoCompareItems(itemById[x], itemById[y])).forEach(id => result.push(id));
+  return result.map(id => itemById[id]);
+}
+
 function scrollToFirstUnwatched(){
-  const list = filteredData();
+  let list = filteredData();
+  if (mosaicSort === 'chrono') list = buildChronoDependencyOrder(list);
   const idx = list.findIndex(d => !progress[d.id]?.watched);
   if (idx === -1) return;
   requestAnimationFrame(() => {
@@ -1236,7 +1357,7 @@ function studioColor(s){ return (STUDIOS[s]||{color:'#888'}).color; }
 
 function render(){
   updateStats();
-  const list = filteredData();
+  let list = filteredData();
   const main = document.getElementById('main');
   if (list.length === 0){
     main.innerHTML = `<div class="empty-msg">${catalog.length===0 ? "Le catalogue est vide pour l'instant." : (currentScope==='mine' ? "Ton marathon est vide — passe dans l'onglet \"Gestion marathon\" pour sélectionner des programmes." : "Aucun résultat.")}</div>`;
@@ -1263,50 +1384,16 @@ function render(){
           ${collapsed[studio] ? '' : `<div class="grid">${items.map(cardManage).join('')}</div>`}
         </div>`;
     }).join('');
-  } else if (currentView === 'mosaic'){
-    main.innerHTML = `<div class="mosaic-grid">${list.map(cardMosaic).join('')}</div>`;
   } else if (currentView === 'tier'){
     renderTierList(list, main);
   } else {
-    const byStudio = {};
-    list.forEach(d => { (byStudio[d.studio] = byStudio[d.studio]||[]).push(d); });
-    const orderedStudioNames = [...studios.map(s=>s.name), ...Object.keys(byStudio).filter(n => !studios.some(s=>s.name===n))];
-    main.innerHTML = orderedStudioNames.filter(studio => byStudio[studio]).map(studio => {
-      const items = byStudio[studio];
-      const seen = items.filter(d => progress[d.id]?.watched).length;
-      const pct = Math.round(seen/items.length*100);
-      return `
-        <div class="studio-section">
-          <div class="studio-header" onclick="toggleCollapse('${studio}')">
-            <div class="studio-dot" style="background:${studioColor(studio)}"></div>
-            <div class="studio-name">${studio}</div>
-            <div class="studio-prog">${seen}/${items.length} · ${pct}%</div>
-            <div class="studio-actions" onclick="event.stopPropagation()">
-              <button class="studio-mini-btn" onclick='markStudioWatched("${studio}", true)'>Tout marquer vu</button>
-            </div>
-          </div>
-          <div class="studio-bar"><div class="studio-bar-fill" style="width:${pct}%;background:${studioColor(studio)}"></div></div>
-          ${collapsed[studio] ? '' : `<div class="grid">${items.map(cardItem).join('')}</div>`}
-        </div>`;
-    }).join('');
+    // Mosaïque — seule vue de "Mon marathon" désormais
+    if (mosaicSort === 'chrono') list = buildChronoDependencyOrder(list);
+    main.innerHTML = `<div class="mosaic-grid">${list.map(cardMosaic).join('')}</div>`;
   }
 }
 
 function toggleCollapse(s){ collapsed[s] = !collapsed[s]; render(); }
-
-function cardItem(d){
-  const p = progress[d.id] || {};
-  const ratingBadge = p.rating ? `<div class="card-stars" style="color:var(--gold);font-size:10px;font-weight:600">⭐ ${p.rating}/10</div>` : '';
-  return `
-    <div class="card ${p.watched?'watched':''}" onclick="openDetail('${d.id}')">
-      <div class="card-owned ${p.owned?'on':''}" onclick="event.stopPropagation();toggleOwnedFor('${d.id}')" title="Possédé">${p.owned?'★':''}</div>
-      <div class="card-check" onclick="event.stopPropagation();toggleWatchedFor('${d.id}')">${p.watched?'✓':''}</div>
-      <div class="card-studio" style="padding-left:16px">${d.type}</div>
-      <div class="card-title">${d.title}</div>
-      <div class="card-meta">${d.year || ''} ${d.duration ? '· '+fmtDuration(d.duration, d.episodes) : ''}</div>
-      ${ratingBadge}
-    </div>`;
-}
 
 function cardMosaic(d){
   const p = progress[d.id] || {};
@@ -1454,16 +1541,13 @@ function refreshDetailRating(){
 // ── Navigation swipe / flèches entre fiches (respecte les filtres/vue en cours) ──
 function navList(){
   const list = filteredData();
-  if (currentView === 'studio' && currentDetailId){
-    const cur = catalog.find(d => d.id === currentDetailId);
-    if (cur) return list.filter(d => d.studio === cur.studio);
-  }
   if (currentView === 'tier' && currentDetailId){
     const rating = progress[currentDetailId]?.rating;
     if (!rating) return [];
     return list.filter(d => progress[d.id]?.rating === rating)
       .sort((a,b) => (progress[a.id]?.tierPos ?? 9999) - (progress[b.id]?.tierPos ?? 9999));
   }
+  if (currentView === 'mosaic' && mosaicSort === 'chrono') return buildChronoDependencyOrder(list);
   return list;
 }
 
