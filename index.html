@@ -130,6 +130,7 @@ button{font-family:inherit}
 .mosaic-item img{width:100%;height:100%;object-fit:cover;display:block}
 .mosaic-item-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:9px;color:#ddd;background:var(--bg2)}
 .mosaic-check{position:absolute;top:4px;right:4px;width:14px;height:14px;border-radius:50%;background:#2ecc71;color:#fff;font-size:7px;display:flex;align-items:center;justify-content:center}
+.mosaic-ep-badge{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.75);color:#eee;font-size:9px;text-align:center;padding:2px 4px;font-weight:600}
 
 .empty-msg{text-align:center;color:var(--muted);padding:3rem 1rem;font-size:13px}
 
@@ -487,6 +488,7 @@ let progress = {};     // depuis Firestore, collection 'progress/{uid}/items'
 let isAdmin = false;
 let currentView = 'mosaic';
 let currentDetailId = null;
+let currentDetailPlacementId = null; // paquet précis ouvert (mosaïque chronologique), ou null
 let collapsed = {};
 
 // ═══════════════════════════════════════════════════════════════
@@ -1263,17 +1265,17 @@ function chronoCompareItems(a, b){
 // niveau du programme — sinon une série avec plusieurs paquets d'épisodes à des
 // époques différentes se retrouverait à la fois "avant" et "après" d'autres
 // programmes intercalés entre ses paquets, ce qui créerait une contradiction
-// (un cycle) et casserait l'ordre. Une fois le tri fait au niveau des paquets, on le
-// ramène à un ordre de programmes : chaque programme prend la position de son tout
-// premier paquet dans la séquence triée. ──
-function buildChronoDependencyOrder(items){
+// (un cycle) et casserait l'ordre. Le résultat final affiche AUTANT DE TUILES qu'il
+// y a de paquets pour un programme donné, chacune à sa juste place, avec l'indication
+// des épisodes concernés — un programme sans paquet reste une tuile unique. ──
+function buildChronoOrderInstances(items){
   const groups = {}; // clé univers::branche -> liste de paquets
-  const allPlacements = []; // { nodeId, catalogId, storyDate, yearOrder }
+  const allPlacements = []; // { nodeId, catalogId, placementId, storyDate, yearOrder, epFrom, epTo }
   catalog.forEach(d => {
     (d.chronoPlacements||[]).forEach(p => {
       const nodeId = d.id + '::' + p.id;
       const key = p.universe + '::' + (p.branch||'');
-      const entry = { nodeId, catalogId: d.id, storyDate: p.storyDate, yearOrder: p.yearOrder };
+      const entry = { nodeId, catalogId: d.id, placementId: p.id, storyDate: p.storyDate, yearOrder: p.yearOrder, epFrom: p.epFrom||null, epTo: p.epTo||null };
       allPlacements.push(entry);
       (groups[key] = groups[key]||[]).push(entry);
     });
@@ -1314,8 +1316,8 @@ function buildChronoDependencyOrder(items){
   // chronologique reste son propre nœud (son catalogId directement).
   const noPlacementItems = items.filter(d => !((d.chronoPlacements||[]).length));
   const nodeMeta = {};
-  allPlacements.forEach(p => nodeMeta[p.nodeId] = { catalogId: p.catalogId });
-  noPlacementItems.forEach(d => nodeMeta[d.id] = { catalogId: d.id });
+  allPlacements.forEach(p => nodeMeta[p.nodeId] = p);
+  noPlacementItems.forEach(d => nodeMeta[d.id] = { catalogId: d.id, placementId: null });
 
   const allNodeIds = [...new Set([...allPlacements.map(p=>p.nodeId), ...noPlacementItems.map(d=>d.id)])];
   const nodeIdSet = new Set(allNodeIds);
@@ -1345,23 +1347,21 @@ function buildChronoDependencyOrder(items){
   }
   if (remaining.size) [...remaining].sort(compareNodes).forEach(id => orderedNodes.push(id));
 
-  // 4. Ramène l'ordre des paquets à un ordre de programmes : chaque programme prend
-  // la position de son tout premier paquet dans la séquence triée.
-  const seen = new Set();
+  // 4. Convertit chaque nœud en tuile d'affichage — un programme à plusieurs paquets
+  // donne donc plusieurs tuiles, une par paquet, chacune à sa position calculée.
   const result = [];
   orderedNodes.forEach(nodeId => {
-    const cid = nodeMeta[nodeId].catalogId;
-    if (seen.has(cid) || !itemById[cid]) return;
-    seen.add(cid);
-    result.push(itemById[cid]);
+    const meta = nodeMeta[nodeId];
+    const d = itemById[meta.catalogId];
+    if (!d) return; // filtré par la recherche/les filtres en cours
+    result.push({ ...d, _catalogId: meta.catalogId, _placementId: meta.placementId||null, _epFrom: meta.epFrom||null, _epTo: meta.epTo||null });
   });
-  items.forEach(d => { if (!seen.has(d.id)){ seen.add(d.id); result.push(d); } });
   return result;
 }
 
 function scrollToFirstUnwatched(){
   let list = filteredData();
-  if (mosaicSort === 'chrono') list = buildChronoDependencyOrder(list);
+  if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
   const idx = list.findIndex(d => !progress[d.id]?.watched);
   if (idx === -1) return;
   requestAnimationFrame(() => {
@@ -1427,19 +1427,27 @@ function render(){
     renderTierList(list, main);
   } else {
     // Mosaïque — seule vue de "Mon marathon" désormais
-    if (mosaicSort === 'chrono') list = buildChronoDependencyOrder(list);
+    if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
     main.innerHTML = `<div class="mosaic-grid">${list.map(cardMosaic).join('')}</div>`;
   }
 }
 
 function toggleCollapse(s){ collapsed[s] = !collapsed[s]; render(); }
 
+function formatEpRangeMarathon(from, to){
+  if (!from && !to) return '';
+  if (from && to && from !== to) return `Ép. ${from}-${to}`;
+  return `Ép. ${from || to}`;
+}
 function cardMosaic(d){
-  const p = progress[d.id] || {};
+  const cid = d._catalogId || d.id;
+  const p = progress[cid] || {};
+  const epLabel = formatEpRangeMarathon(d._epFrom, d._epTo);
   return `
-    <div class="mosaic-item ${p.watched?'watched':''}" onclick="openDetail('${d.id}')">
+    <div class="mosaic-item ${p.watched?'watched':''}" onclick="openDetail('${cid}','${d._placementId||''}')">
       ${d.poster ? `<img src="${d.poster}">` : `<div class="mosaic-item-ph">${d.title}</div>`}
       ${p.watched ? '<div class="mosaic-check">✓</div>' : ''}
+      ${epLabel ? `<div class="mosaic-ep-badge">${epLabel}</div>` : ''}
     </div>`;
 }
 
@@ -1521,12 +1529,16 @@ function updateStats(){
 // ═══════════════════════════════════════════════════════════════
 let lastEpisodesCache = null; // {catalogId, episodes}
 
-async function openDetail(id){
+async function openDetail(id, placementId){
   const d = catalog.find(x => x.id === id);
   if (!d) return;
   currentDetailId = id;
+  currentDetailPlacementId = placementId || null;
   lastEpisodesCache = null;
   const p = progress[id] || {};
+  const activePlacement = placementId ? (d.chronoPlacements||[]).find(pp => pp.id === placementId) : null;
+  const epFrom = activePlacement ? (activePlacement.epFrom||null) : null;
+  const epTo = activePlacement ? (activePlacement.epTo||null) : null;
 
   document.getElementById('detailPoster').src = d.poster || '';
   document.getElementById('detailTitle').textContent = d.title;
@@ -1559,7 +1571,7 @@ async function openDetail(id){
       const season = await res.json();
       const episodes = season.episodes || [];
       lastEpisodesCache = { catalogId: id, episodes };
-      renderEpisodeChecklist(id, episodes);
+      renderEpisodeChecklist(id, episodes, epFrom, epTo);
     } catch(e){
       epBox.innerHTML = '<div class="empty-msg" style="padding:1.5rem 0">Impossible de charger les épisodes.</div>';
     }
@@ -1586,22 +1598,33 @@ function navList(){
     return list.filter(d => progress[d.id]?.rating === rating)
       .sort((a,b) => (progress[a.id]?.tierPos ?? 9999) - (progress[b.id]?.tierPos ?? 9999));
   }
-  if (currentView === 'mosaic' && mosaicSort === 'chrono') return buildChronoDependencyOrder(list);
+  if (currentView === 'mosaic' && mosaicSort === 'chrono') return buildChronoOrderInstances(list);
   return list;
 }
 
+// Trouve la position exacte de la fiche actuellement ouverte dans une liste
+// d'instances — tient compte du paquet précis (une même série peut apparaître
+// plusieurs fois dans la Mosaïque chronologique, une tuile par paquet).
+function currentDetailIndex(list){
+  const withPlacement = currentDetailPlacementId
+    ? list.findIndex(d => (d._catalogId||d.id) === currentDetailId && d._placementId === currentDetailPlacementId)
+    : -1;
+  if (withPlacement !== -1) return withPlacement;
+  return list.findIndex(d => (d._catalogId||d.id) === currentDetailId);
+}
 function detailNav(dir){
   const list = navList();
-  const idx = list.findIndex(d => d.id === currentDetailId);
+  const idx = currentDetailIndex(list);
   if (idx === -1) return;
   const nextIdx = idx + dir;
   if (nextIdx < 0 || nextIdx >= list.length) return;
-  openDetail(list[nextIdx].id);
+  const target = list[nextIdx];
+  openDetail(target._catalogId || target.id, target._placementId || '');
 }
 
 function updateDetailNavButtons(){
   const list = navList();
-  const idx = list.findIndex(d => d.id === currentDetailId);
+  const idx = currentDetailIndex(list);
   document.getElementById('detailPrevBtn').disabled = idx <= 0;
   document.getElementById('detailNextBtn').disabled = idx === -1 || idx >= list.length - 1;
 }
@@ -1634,26 +1657,31 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') { closeOverlay('detailOverlay'); }
 });
 
-function renderEpisodeChecklist(catalogId, episodes){
+function renderEpisodeChecklist(catalogId, allEpisodes, epFrom, epTo){
   const p = progress[catalogId] || {};
   const watchedMap = p.watchedEpisodes || {};
-  const total = episodes.length;
-  const done = episodes.filter(e => watchedMap[e.episode_number]).length;
+  const displayEpisodes = (epFrom || epTo)
+    ? allEpisodes.filter(e => (!epFrom || e.episode_number >= epFrom) && (!epTo || e.episode_number <= epTo))
+    : allEpisodes;
+  const fullTotal = allEpisodes.length;
+  const total = displayEpisodes.length;
+  const done = displayEpisodes.filter(e => watchedMap[e.episode_number]).length;
   const pct = total ? Math.round(done/total*100) : 0;
-  const epNums = episodes.map(e => e.episode_number);
+  const epNums = displayEpisodes.map(e => e.episode_number);
+  const packetLabel = (epFrom || epTo) ? ` — paquet ${formatEpRangeMarathon(epFrom, epTo)}` : '';
   document.getElementById('detailEpisodes').innerHTML = `
     <div class="ep-header">
-      <span class="ep-header-count">${done}/${total} épisodes vus</span>
+      <span class="ep-header-count">${done}/${total} épisodes vus${packetLabel}</span>
       <div class="ep-actions">
-        <button class="studio-mini-btn" onclick='toggleAllEpisodes("${catalogId}", ${JSON.stringify(epNums)}, true)'>Tout cocher</button>
-        <button class="studio-mini-btn" onclick='toggleAllEpisodes("${catalogId}", ${JSON.stringify(epNums)}, false)'>Tout décocher</button>
+        <button class="studio-mini-btn" onclick='toggleAllEpisodes("${catalogId}", ${JSON.stringify(epNums)}, true, ${fullTotal})'>Tout cocher</button>
+        <button class="studio-mini-btn" onclick='toggleAllEpisodes("${catalogId}", ${JSON.stringify(epNums)}, false, ${fullTotal})'>Tout décocher</button>
       </div>
     </div>
     <div class="ep-progress-wrap"><div class="ep-progress-fill" style="width:${pct}%"></div></div>
     <div class="ep-list">
-      ${episodes.map(e => `
+      ${displayEpisodes.map(e => `
         <label class="ep-row">
-          <input type="checkbox" ${watchedMap[e.episode_number]?'checked':''} onchange="toggleEpisodeFor('${catalogId}', ${e.episode_number}, ${total})">
+          <input type="checkbox" ${watchedMap[e.episode_number]?'checked':''} onchange="toggleEpisodeFor('${catalogId}', ${e.episode_number}, ${fullTotal})">
           <span class="ep-num">E${e.episode_number}</span>
           <span class="ep-title">${(e.name||'').replace(/</g,'&lt;')}</span>
         </label>`).join('')}
@@ -1672,11 +1700,11 @@ function toggleEpisodeFor(catalogId, epNum, total){
   }, { merge:true }).catch(err => alert('Erreur : ' + err.message));
 }
 
-function toggleAllEpisodes(catalogId, epNums, value){
+function toggleAllEpisodes(catalogId, epNums, value, fullTotal){
   const cur = progress[catalogId] || {};
   const watchedEpisodes = { ...(cur.watchedEpisodes||{}) };
   epNums.forEach(n => watchedEpisodes[n] = value);
-  const total = epNums.length;
+  const total = fullTotal || epNums.length;
   const done = Object.values(watchedEpisodes).filter(Boolean).length;
   progressRef(catalogId).set({
     watchedEpisodes,
@@ -1692,7 +1720,8 @@ function refreshDetailIfOpen(){
   if (!d) return;
   const p = progress[currentDetailId] || {};
   if (lastEpisodesCache && lastEpisodesCache.catalogId === currentDetailId){
-    renderEpisodeChecklist(currentDetailId, lastEpisodesCache.episodes);
+    const activePlacement = currentDetailPlacementId ? (d.chronoPlacements||[]).find(pp => pp.id === currentDetailPlacementId) : null;
+    renderEpisodeChecklist(currentDetailId, lastEpisodesCache.episodes, activePlacement?.epFrom||null, activePlacement?.epTo||null);
   } else if (document.getElementById('detailWatchBtn').style.display !== 'none') {
     document.getElementById('detailWatchBtn').textContent = p.watched ? '✓ Vu' : 'Marquer comme vu';
   }
