@@ -117,6 +117,11 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 .detail-nav.next{right:10px}
 
 .unimgr-row{display:flex;align-items:center;gap:6px;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.unimgr-branches{padding:2px 0 8px 20px;border-bottom:1px solid var(--border)}
+.unimgr-branch-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 0;font-size:11px;color:var(--muted)}
+.unimgr-side-toggle{display:flex;gap:4px}
+.unimgr-side-toggle button{font-size:9px;padding:3px 8px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
+.unimgr-side-toggle button.on{border-color:var(--gold);color:var(--gold)}
 .unimgr-row:last-child{border-bottom:none}
 .unimgr-row input[type=color]{width:30px;height:30px;border:none;background:none;padding:0;flex-shrink:0;cursor:pointer}
 .unimgr-row input[type=text]{flex:1;padding:6px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px}
@@ -615,14 +620,17 @@ function renderBoard(){
     : (d => fmtYear(d) || '?');
   const dateSort = sortMode === 'chrono' ? storyDateCompare : ((a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||''));
 
-  // Construit la liste des colonnes : tronc de chaque univers, suivi de ses branches
+  // Construit la liste des colonnes : tronc de chaque univers, avec ses branches
+  // placées à gauche ou à droite selon la préférence enregistrée (par défaut : droite)
   // — uniquement si au moins un programme y est visible (respecte le filtre en cours)
   const columns = [];
   activeUniverses.forEach(u => {
     const trunkItems = items.filter(d => d.universe===u.id && !d.branch);
-    if (trunkItems.length > 0) columns.push({ type:'trunk', u, key:u.id });
     const bNames = [...new Set(items.filter(d => d.universe===u.id && d.branch).map(d=>d.branch))];
-    bNames.forEach(bn => columns.push({ type:'branch', u, branchName:bn, key:u.id+'::'+bn }));
+    const branchSide = bn => (u.branchSides && u.branchSides[bn] === 'left') ? 'left' : 'right';
+    bNames.filter(bn => branchSide(bn) === 'left').forEach(bn => columns.push({ type:'branch', u, branchName:bn, key:u.id+'::'+bn }));
+    if (trunkItems.length > 0) columns.push({ type:'trunk', u, key:u.id });
+    bNames.filter(bn => branchSide(bn) === 'right').forEach(bn => columns.push({ type:'branch', u, branchName:bn, key:u.id+'::'+bn }));
   });
   const itemsOfColumn = col => col.type==='trunk'
     ? items.filter(d => d.universe===col.u.id && !d.branch)
@@ -1002,7 +1010,19 @@ function openUniverseMgr(){
 function renderUniverseMgr(){
   const list = activeUniverseList();
   const box = document.getElementById('universeMgrList');
-  box.innerHTML = list.map((u,i) => `
+  box.innerHTML = list.map((u,i) => {
+    const bNames = branchesOfUniverse(u);
+    const branchesHtml = bNames.length ? `<div class="unimgr-branches">${bNames.map(bn => {
+      const side = (u.branchSides && u.branchSides[bn] === 'left') ? 'left' : 'right';
+      return `<div class="unimgr-branch-row">
+        <span>↳ ${bn}</span>
+        <div class="unimgr-side-toggle">
+          <button class="${side==='left'?'on':''}" onclick="setBranchSide('${u.id}','${bn.replace(/'/g,"\\'")}','left')">◀ Gauche</button>
+          <button class="${side==='right'?'on':''}" onclick="setBranchSide('${u.id}','${bn.replace(/'/g,"\\'")}','right')">Droite ▶</button>
+        </div>
+      </div>`;
+    }).join('')}</div>` : '';
+    return `
     <div class="unimgr-row">
       <div class="unimgr-order">
         <button onclick="moveUniverse('${u.id}',-1)" ${i===0?'disabled':''}>▲</button>
@@ -1011,7 +1031,19 @@ function renderUniverseMgr(){
       <input type="color" value="${u.color}" onchange="recolorUniverse('${u.id}', this.value)">
       <input type="text" value="${u.name}" onchange="renameUniverse('${u.id}', this.value)">
       <button class="unimgr-del" onclick="deleteUniverse('${u.id}','${u.name.replace(/'/g,"\\'")}')">🗑</button>
-    </div>`).join('') || '<div class="empty-msg">Aucun univers.</div>';
+    </div>${branchesHtml}`;
+  }).join('') || '<div class="empty-msg">Aucun univers.</div>';
+}
+function branchesOfUniverse(u){
+  const names = sortMode === 'chrono'
+    ? catalog.flatMap(d => (d.chronoPlacements||[]).filter(p => p.universe===u.id && p.branch).map(p => p.branch))
+    : catalog.filter(d => d.universe===u.id && d.branch).map(d => d.branch);
+  return [...new Set(names)];
+}
+function setBranchSide(universeId, branchName, side){
+  db.collection(universeCollectionName()).doc(universeId).update({ [`branchSides.${branchName}`]: side })
+    .then(renderUniverseMgr)
+    .catch(err => alert('Erreur : ' + err.message));
 }
 function addUniverse(){
   const name = document.getElementById('newUniName').value.trim();
