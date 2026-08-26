@@ -611,7 +611,7 @@ function renderBoard(){
   }
 
   const yearOf = sortMode === 'chrono'
-    ? (d => (d._storyDate||'').slice(0,4) || '?')
+    ? (d => { const parts = splitStoryDate(d._storyDate); return parts ? parts.y : '?'; })
     : (d => fmtYear(d) || '?');
   const dateSort = sortMode === 'chrono' ? storyDateCompare : ((a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||''));
 
@@ -648,8 +648,9 @@ function renderBoard(){
     });
   }
 
-  // Années réellement présentes (toutes colonnes confondues), triées
-  const years = [...new Set(items.map(yearOf))].filter(y => y !== '?').sort();
+  // Années réellement présentes (toutes colonnes confondues), triées numériquement
+  // (un tri alphabétique classerait mal les années négatives, av. J.-C.)
+  const years = [...new Set(items.map(yearOf))].filter(y => y !== '?').sort((a,b) => parseInt(a,10) - parseInt(b,10));
 
   // Classement GLOBAL par date exacte à l'intérieur de chaque année (toutes colonnes
   // confondues) : chaque programme a sa propre ligne, même si un autre univers a
@@ -1237,18 +1238,22 @@ function addLink(){
   const b = document.getElementById('linkB').value;
   const type = document.getElementById('linkType').value;
   const label = document.getElementById('linkLabel').value.trim();
-  if (!a || !b || a === b) return alert('Choisis deux programmes différents.');
+  if (!a || !b) return alert('Choisis deux programmes.');
   const entry = { a, b, type, label };
+  let aPid = null, bPid = null;
   if (sortMode === 'chrono'){
     const category = document.getElementById('linkCategory').value;
     entry.category = category;
     if (categoryNeedsPlacement(category)){
-      const aPid = document.getElementById('linkAPlacement').value;
-      const bPid = document.getElementById('linkBPlacement').value;
+      aPid = document.getElementById('linkAPlacement').value || null;
+      bPid = document.getElementById('linkBPlacement').value || null;
       if (aPid) entry.aPlacementId = aPid;
       if (bPid) entry.bPlacementId = bPid;
     }
   }
+  // Un même programme peut être relié à lui-même s'il s'agit de deux tuiles (époques)
+  // différentes — seul un lien vers la tuile exactement identique n'a pas de sens.
+  if (a === b && aPid === bPid) return alert('Choisis deux tuiles différentes (même programme mais époques différentes, ou deux programmes différents).');
   db.collection(linkCollectionName()).add(entry).then(() => { document.getElementById('linkLabel').value=''; renderLinkList(); });
 }
 function deleteLink(id){
