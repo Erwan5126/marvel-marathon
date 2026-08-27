@@ -938,11 +938,18 @@ function closeOverlay(id){ document.getElementById(id).classList.remove('open');
 // FIRESTORE — catalogue partagé (lecture publique, écriture admin only,
 // vérifié aussi côté serveur par les règles de sécurité)
 // ═══════════════════════════════════════════════════════════════
+let didInitialScroll = false;
+function maybeInitialScroll(){
+  if (didInitialScroll || catalog.length === 0 || currentView !== 'mosaic') return;
+  didInitialScroll = true;
+  scrollToFirstUnwatched();
+}
 function listenCatalog(){
   db.collection('catalog').orderBy('releaseDate').onSnapshot(snap => {
     catalog = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     buildFilters();
     render();
+    maybeInitialScroll();
   }, err => console.error('Erreur lecture catalogue', err));
 }
 
@@ -952,6 +959,7 @@ function listenProgress(uid){
     snap.docs.forEach(d => progress[d.id] = d.data());
     render();
     refreshDetailIfOpen();
+    maybeInitialScroll();
   });
 }
 
@@ -1216,6 +1224,7 @@ function setMosaicSort(mode){
   document.getElementById('mosaicSortReleaseBtn').classList.toggle('on', mode === 'release');
   document.getElementById('mosaicSortChronoBtn').classList.toggle('on', mode === 'chrono');
   render();
+  if (currentView === 'mosaic') scrollToFirstUnwatched();
 }
 // Analyse une date narrative (identique à celle de la page Timelines) — gère
 // les précisions partielles (année seule, mois+année) et les années av. J.-C.
