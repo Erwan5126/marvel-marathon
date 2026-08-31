@@ -684,7 +684,7 @@ function renderBoard(){
     const rows = itemsOfColumn(col).map(d => 2 + yearRowStart[yearOf(d)] + rankOf[d.id]);
     if (rows.length === 0) return;
     const rowStart = Math.min(...rows), rowEnd = Math.max(...rows);
-    html += `<div class="col-bg" style="grid-column:${gcol};grid-row:${rowStart} / span ${rowEnd - rowStart + 1};background:${hexToRgba(col.u.color, 0.15)}"></div>`;
+    html += `<div class="col-bg" data-uid="${col.u.id}" style="grid-column:${gcol};grid-row:${rowStart} / span ${rowEnd - rowStart + 1};background:${hexToRgba(col.u.color, 0.15)}"></div>`;
   });
   years.forEach(y => {
     html += `<div class="year-label" style="grid-row:${2+yearRowStart[y]} / span ${yearRowCount[y]}">${y}</div>`;
@@ -884,8 +884,54 @@ function drawLinks(){
   // Un lien "voyage dans le temps" cible une tuile précise si spécifiée ;
   // un lien "rencontre multiversielle" cible le programme au sens large. ──
   const activeLinksForDraw = sortMode === 'chrono' ? chronoLinks : links;
-  const corridorUsage = {}; // compte les liens déjà tracés dans chaque couloir, pour les écarter proprement
+  const corridorUsage = {}; // compte les liens déjà tracés dans chaque couloir de départ
+  const targetUsage = {}; // compte les liens qui convergent déjà vers la même cible
   const fanOffset = n => { if (n === 0) return 0; const mag = Math.ceil(n/2) * 7; return (n % 2 === 1) ? mag : -mag; };
+
+  // Fonds de colonne (halo d'univers) déjà posés dans la grille — servent à détecter
+  // les portions de lien qui traversent un univers étranger à ses deux extrémités.
+  const colBgRects = [...board.querySelectorAll('.col-bg')].map(el => {
+    const r = el.getBoundingClientRect();
+    return { uid: el.dataset.uid, left: r.left - boardRect.left, right: r.right - boardRect.left, top: r.top - boardRect.top, bottom: r.bottom - boardRect.top };
+  });
+  const uidOfColkey = ck => (ck||'').split('::')[0];
+  // Découpe un segment droit (horizontal OU vertical) en sous-segments solides/pointillés,
+  // selon les rectangles "étrangers" qu'il traverse.
+  function buildSegmentRuns(px1, py1, px2, py2, foreignRects){
+    const horizontal = py1 === py2;
+    const minC = horizontal ? Math.min(px1,px2) : Math.min(py1,py2);
+    const maxC = horizontal ? Math.max(px1,px2) : Math.max(py1,py2);
+    let intervals = [];
+    foreignRects.forEach(r => {
+      if (horizontal){
+        if (py1 < r.top || py1 > r.bottom) return;
+        const lo = Math.max(minC, r.left), hi = Math.min(maxC, r.right);
+        if (lo < hi) intervals.push([lo,hi]);
+      } else {
+        if (px1 < r.left || px1 > r.right) return;
+        const lo = Math.max(minC, r.top), hi = Math.min(maxC, r.bottom);
+        if (lo < hi) intervals.push([lo,hi]);
+      }
+    });
+    intervals.sort((a,b) => a[0]-b[0]);
+    const merged = [];
+    intervals.forEach(iv => {
+      if (merged.length && iv[0] <= merged[merged.length-1][1]) merged[merged.length-1][1] = Math.max(merged[merged.length-1][1], iv[1]);
+      else merged.push(iv.slice());
+    });
+    const runs = [];
+    let cursor = minC;
+    merged.forEach(([a,b]) => {
+      if (a > cursor) runs.push([cursor, a, false]);
+      runs.push([a, b, true]);
+      cursor = b;
+    });
+    if (cursor < maxC) runs.push([cursor, maxC, false]);
+    return runs.map(([a,b,dashed]) => horizontal
+      ? { x1:a, y1:py1, x2:b, y2:py1, dashed }
+      : { x1:px1, y1:a, x2:px1, y2:b, dashed });
+  }
+
   activeLinksForDraw.forEach((l, i) => {
     const category = l.category || 'multiverse';
     const selA = (categoryNeedsPlacement(category) && l.aPlacementId) ? `[data-placement="${l.aPlacementId}"]` : `[data-card="${l.a}"]`;
@@ -926,24 +972,55 @@ function drawLinks(){
     // là où sort le fil automatique de sa colonne, ce qui créerait un chevauchement confus.
     const y2 = rb.top - boardRect.top;
 
+    // Plusieurs liens peuvent converger vers la même cible depuis des couloirs différents :
+    // on écarte leur hauteur d'approche pour que leurs segments horizontaux ne se
+    // superposent jamais, même quand leurs couloirs de départ étaient distincts.
+    const targetIdx = targetUsage[selB] || 0;
+    targetUsage[selB] = targetIdx + 1;
+
     const gapDrop = 6;
     const y1b = y1 + gapDrop;
-    const y2b = y2 - gapDrop;
+    const y2b = y2 - gapDrop - targetIdx * 8;
 
     const isSequel = l.type !== 'reference';
     const colorA = elA.style.getPropertyValue('--uc') || '#C9973A';
     const markerId = 'arrow-' + i;
     if (isSequel) ensureArrowMarker(colorA, markerId);
-    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d', `M${x1},${y1} L${x1},${y1b} L${laneX},${y1b} L${laneX},${y2b} L${x2},${y2b} L${x2},${y2}`);
-    path.setAttribute('stroke-linejoin', 'round');
-    path.setAttribute('stroke', colorA);
-    path.setAttribute('stroke-width', isSequel ? '2' : '1.3');
-    path.setAttribute('fill', 'none');
-    if (!isSequel) path.setAttribute('stroke-dasharray', '4 3');
-    path.setAttribute('opacity', isSequel ? '0.9' : '0.55');
-    if (isSequel) path.setAttribute('marker-end', `url(#${markerId})`);
-    svg.appendChild(path);
+
+    // Univers étrangers traversés (ni celui de A, ni celui de B) : la portion du trajet
+    // qui passe sur leur halo coloré se dessine en pointillé, pour montrer qu'elle ne
+    // fait que passer sans s'y rattacher.
+    const sourceUid = uidOfColkey(elA.dataset.colkey);
+    const targetUid = uidOfColkey(elB.dataset.colkey);
+    const foreignRects = colBgRects.filter(r => r.uid && r.uid !== sourceUid && r.uid !== targetUid);
+    const travelPoints = [[x1,y1],[x1,y1b],[laneX,y1b],[laneX,y2b],[x2,y2b]];
+    const runs = [];
+    for (let s = 0; s < travelPoints.length - 1; s++){
+      const [ax,ay] = travelPoints[s], [bx,by] = travelPoints[s+1];
+      runs.push(...buildSegmentRuns(ax, ay, bx, by, foreignRects));
+    }
+    runs.forEach(run => {
+      const seg = document.createElementNS('http://www.w3.org/2000/svg','path');
+      seg.setAttribute('d', `M${run.x1},${run.y1} L${run.x2},${run.y2}`);
+      seg.setAttribute('stroke', colorA);
+      seg.setAttribute('stroke-width', isSequel ? '2' : '1.3');
+      seg.setAttribute('fill', 'none');
+      seg.setAttribute('opacity', isSequel ? '0.9' : '0.55');
+      if (!isSequel || run.dashed) seg.setAttribute('stroke-dasharray', '4 3');
+      svg.appendChild(seg);
+    });
+    // Segment final d'entrée dans B : toujours plein, avec la flèche s'il y en a une —
+    // il reste entièrement dans le halo de B, donc jamais concerné par le pointillé.
+    const finalSeg = document.createElementNS('http://www.w3.org/2000/svg','path');
+    finalSeg.setAttribute('d', `M${x2},${y2b} L${x2},${y2}`);
+    finalSeg.setAttribute('stroke-linejoin', 'round');
+    finalSeg.setAttribute('stroke', colorA);
+    finalSeg.setAttribute('stroke-width', isSequel ? '2' : '1.3');
+    finalSeg.setAttribute('fill', 'none');
+    if (!isSequel) finalSeg.setAttribute('stroke-dasharray', '4 3');
+    finalSeg.setAttribute('opacity', isSequel ? '0.9' : '0.55');
+    if (isSequel) finalSeg.setAttribute('marker-end', `url(#${markerId})`);
+    svg.appendChild(finalSeg);
 
     const labelText = l.label || (isSequel ? 'Suite' : '');
     if (labelText){
