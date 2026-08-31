@@ -684,7 +684,7 @@ function renderBoard(){
     const rows = itemsOfColumn(col).map(d => 2 + yearRowStart[yearOf(d)] + rankOf[d.id]);
     if (rows.length === 0) return;
     const rowStart = Math.min(...rows), rowEnd = Math.max(...rows);
-    html += `<div class="col-bg" data-uid="${col.u.id}" style="grid-column:${gcol};grid-row:${rowStart} / span ${rowEnd - rowStart + 1};background:${hexToRgba(col.u.color, 0.15)}"></div>`;
+    html += `<div class="col-bg" data-uid="${col.u.id}" data-colkey="${col.key}" style="grid-column:${gcol};grid-row:${rowStart} / span ${rowEnd - rowStart + 1};background:${hexToRgba(col.u.color, 0.15)}"></div>`;
   });
   years.forEach(y => {
     html += `<div class="year-label" style="grid-row:${2+yearRowStart[y]} / span ${yearRowCount[y]}">${y}</div>`;
@@ -892,9 +892,8 @@ function drawLinks(){
   // les portions de lien qui traversent un univers étranger à ses deux extrémités.
   const colBgRects = [...board.querySelectorAll('.col-bg')].map(el => {
     const r = el.getBoundingClientRect();
-    return { uid: el.dataset.uid, left: r.left - boardRect.left, right: r.right - boardRect.left, top: r.top - boardRect.top, bottom: r.bottom - boardRect.top };
+    return { colkey: el.dataset.colkey, left: r.left - boardRect.left, right: r.right - boardRect.left, top: r.top - boardRect.top, bottom: r.bottom - boardRect.top };
   });
-  const uidOfColkey = ck => (ck||'').split('::')[0];
   // Découpe un segment droit (horizontal OU vertical) en sous-segments solides/pointillés,
   // selon les rectangles "étrangers" qu'il traverse.
   function buildSegmentRuns(px1, py1, px2, py2, foreignRects){
@@ -965,18 +964,21 @@ function drawLinks(){
     const x1 = centerA + (goRight ? offset : -offset);
     const y1 = ra.bottom - boardRect.top; // sort toujours par le bas de A
 
+    // Plusieurs liens peuvent converger vers la même cible depuis des couloirs différents :
+    // on écarte leur point d'entrée (largeur ET hauteur) pour que ni leurs flèches ni leurs
+    // segments horizontaux ne se superposent jamais.
+    const targetIdx = targetUsage[selB] || 0;
+    targetUsage[selB] = targetIdx + 1;
+
     const centerB = rb.left - boardRect.left + rb.width/2;
-    const x2 = centerB + (laneX > centerB ? offset : -offset);
+    const entrySide = laneX > centerB ? 1 : -1;
+    const maxSpread = Math.max(rb.width/2 - 6, offset);
+    const spread = Math.min(offset + targetIdx * 10, maxSpread);
+    const x2 = centerB + entrySide * spread;
     // Entre toujours par le HAUT de B, même si B est chronologiquement antérieur à A
     // (donc plus haut dans la grille) — sinon le lien entrerait par le bas de B, exactement
     // là où sort le fil automatique de sa colonne, ce qui créerait un chevauchement confus.
     const y2 = rb.top - boardRect.top;
-
-    // Plusieurs liens peuvent converger vers la même cible depuis des couloirs différents :
-    // on écarte leur hauteur d'approche pour que leurs segments horizontaux ne se
-    // superposent jamais, même quand leurs couloirs de départ étaient distincts.
-    const targetIdx = targetUsage[selB] || 0;
-    targetUsage[selB] = targetIdx + 1;
 
     const gapDrop = 6;
     const y1b = y1 + gapDrop;
@@ -987,12 +989,11 @@ function drawLinks(){
     const markerId = 'arrow-' + i;
     if (isSequel) ensureArrowMarker(colorA, markerId);
 
-    // Univers étrangers traversés (ni celui de A, ni celui de B) : la portion du trajet
-    // qui passe sur leur halo coloré se dessine en pointillé, pour montrer qu'elle ne
-    // fait que passer sans s'y rattacher.
-    const sourceUid = uidOfColkey(elA.dataset.colkey);
-    const targetUid = uidOfColkey(elB.dataset.colkey);
-    const foreignRects = colBgRects.filter(r => r.uid && r.uid !== sourceUid && r.uid !== targetUid);
+    // Colonnes étrangères traversées (ni la colonne exacte de A, ni celle de B — une autre
+    // branche de la même univers compte comme étrangère) : la portion du trajet qui passe
+    // sur leur halo coloré se dessine en pointillé, pour montrer qu'elle ne fait que passer
+    // sans s'y rattacher.
+    const foreignRects = colBgRects.filter(r => r.colkey && r.colkey !== elA.dataset.colkey && r.colkey !== elB.dataset.colkey);
     const travelPoints = [[x1,y1],[x1,y1b],[laneX,y1b],[laneX,y2b],[x2,y2b]];
     const runs = [];
     for (let s = 0; s < travelPoints.length - 1; s++){
