@@ -919,15 +919,16 @@ function drawLinks(){
     const x1 = centerA + (goRight ? offset : -offset);
     const y1 = ra.bottom - boardRect.top; // sort toujours par le bas de A
 
-    const aMidY = ra.top + ra.height/2, bMidY = rb.top + rb.height/2;
-    const bBelow = bMidY > aMidY;
     const centerB = rb.left - boardRect.left + rb.width/2;
     const x2 = centerB + (laneX > centerB ? offset : -offset);
-    const y2 = (bBelow ? rb.top : rb.bottom) - boardRect.top; // entre par le côté qui fait face à A
+    // Entre toujours par le HAUT de B, même si B est chronologiquement antérieur à A
+    // (donc plus haut dans la grille) — sinon le lien entrerait par le bas de B, exactement
+    // là où sort le fil automatique de sa colonne, ce qui créerait un chevauchement confus.
+    const y2 = rb.top - boardRect.top;
 
     const gapDrop = 6;
     const y1b = y1 + gapDrop;
-    const y2b = bBelow ? y2 - gapDrop : y2 + gapDrop;
+    const y2b = y2 - gapDrop;
 
     const isSequel = l.type !== 'reference';
     const colorA = elA.style.getPropertyValue('--uc') || '#C9973A';
