@@ -884,6 +884,8 @@ function drawLinks(){
   // Un lien "voyage dans le temps" cible une tuile précise si spécifiée ;
   // un lien "rencontre multiversielle" cible le programme au sens large. ──
   const activeLinksForDraw = sortMode === 'chrono' ? chronoLinks : links;
+  const corridorUsage = {}; // compte les liens déjà tracés dans chaque couloir, pour les écarter proprement
+  const fanOffset = n => { if (n === 0) return 0; const mag = Math.ceil(n/2) * 7; return (n % 2 === 1) ? mag : -mag; };
   activeLinksForDraw.forEach((l, i) => {
     const category = l.category || 'multiverse';
     const selA = (categoryNeedsPlacement(category) && l.aPlacementId) ? `[data-placement="${l.aPlacementId}"]` : `[data-card="${l.a}"]`;
@@ -894,11 +896,21 @@ function drawLinks(){
     any = true;
     const ra = elA.getBoundingClientRect(), rb = elB.getBoundingClientRect();
 
-    // Couloir vertical : dans l'espace entre colonnes, jamais sur une carte
+    // Couloir vertical : on part du côté où se trouve réellement la carte cible (B),
+    // jamais sur une carte — avec repli si jamais ce côté-là manquait de place.
+    const aCenterX = ra.left + ra.width/2, bCenterX = rb.left + rb.width/2;
     const spaceRight = boardRect.right - ra.right;
-    const goRight = spaceRight > 18;
-    const fan = (i % 3 - 1) * 5; // écarte légèrement les liens qui partagent le même couloir
-    const laneX = (goRight ? (ra.right - boardRect.left + 10) : (ra.left - boardRect.left - 10)) + fan;
+    const spaceLeft = ra.left - boardRect.left;
+    let goRight = bCenterX >= aCenterX;
+    if (goRight && spaceRight < 18 && spaceLeft > 18) goRight = false;
+    if (!goRight && spaceLeft < 18 && spaceRight > 18) goRight = true;
+    const baseLaneX = (goRight ? (ra.right - boardRect.left + 10) : (ra.left - boardRect.left - 10));
+    // Regroupe les couloirs quasi identiques (à quelques pixels près) pour bien détecter
+    // deux liens qui partiraient de cartes voisines dans le même espace inter-colonnes.
+    const corridorKey = Math.round(baseLaneX / 8);
+    const usageIndex = corridorUsage[corridorKey] || 0;
+    corridorUsage[corridorKey] = usageIndex + 1;
+    const laneX = baseLaneX + fanOffset(usageIndex);
 
     // On décale légèrement les points d'attache par rapport au centre exact de la carte,
     // pour ne jamais tomber pile sur le fil automatique de la colonne (qui passe au centre).
