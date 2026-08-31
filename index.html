@@ -270,7 +270,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 
 <div class="controls" id="marathonControls">
   <div class="controls-row">
-    <input type="text" class="search" id="searchInput" placeholder="Rechercher..." oninput="render()">
+    <input type="text" class="search" id="searchInput" name="mm-search-query" placeholder="Rechercher..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="render()">
     <div class="view-icons">
       <button class="icon-toggle on" title="Vue mosaïque" onclick="setView('mosaic',this)">▦</button>
       <button class="icon-toggle" title="Tier List" onclick="setView('tier',this)">🏆</button>

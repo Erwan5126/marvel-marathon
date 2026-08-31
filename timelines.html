@@ -291,7 +291,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   <div class="modal">
     <div class="modal-title">Affecter des programmes</div>
     <div class="field"><label>Univers cible</label><select id="bulkUniverseSelect" onchange="onBulkUniverseChange()"></select></div>
-    <input type="text" class="bulk-search" id="bulkSearch" placeholder="Rechercher..." oninput="renderBulkList()">
+    <input type="text" class="bulk-search" id="bulkSearch" name="mm-bulk-search" placeholder="Rechercher..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="renderBulkList()">
     <div class="bulk-actions">
       <button class="bulk-mini-btn" onclick="bulkCheckAll(true)">Tout cocher</button>
       <button class="bulk-mini-btn" onclick="bulkCheckAll(false)">Tout décocher</button>
@@ -308,7 +308,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 <div class="overlay" id="chronoUnassignedOverlay">
   <div class="modal">
     <div class="modal-title">Programmes non affectés (Chronologique)</div>
-    <input type="text" class="bulk-search" id="chronoUnassignedSearch" placeholder="Rechercher..." oninput="renderChronoUnassignedList()">
+    <input type="text" class="bulk-search" id="chronoUnassignedSearch" name="mm-chrono-unassigned-search" placeholder="Rechercher..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="renderChronoUnassignedList()">
     <div class="bulk-list" id="chronoUnassignedList"></div>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('chronoUnassignedOverlay')">Fermer</button>
