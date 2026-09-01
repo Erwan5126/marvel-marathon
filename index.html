@@ -1468,7 +1468,7 @@ function cardMosaic(d){
     for (let n = from; n <= to; n++){ if (watchedMap[n]) done++; }
     const pct = Math.min(100, Math.round(done / packetTotal * 100));
     isFullyWatched = pct >= 100;
-    if (!isFullyWatched && pct > 0) borderStyle = ` style="border-image:conic-gradient(#2ecc71 ${pct}%, rgba(255,255,255,.18) 0) 1"`;
+    if (!isFullyWatched && pct > 0) borderStyle = ` style="border-image:conic-gradient(rgba(255,255,255,.18) 0 ${100-pct}%, #2ecc71 ${100-pct}% 100%) 1"`;
   } else {
     isFullyWatched = !!p.watched;
   }
