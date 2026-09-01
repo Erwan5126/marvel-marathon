@@ -1452,10 +1452,31 @@ function cardMosaic(d){
   const cid = d._catalogId || d.id;
   const p = progress[cid] || {};
   const epLabel = formatEpRangeMarathon(d._epFrom, d._epTo);
+
+  let isFullyWatched = false;
+  let borderStyle = '';
+  if (d.type === 'Série' && d.episodes){
+    const watchedMap = p.watchedEpisodes || {};
+    // En Chronologique, une tuile ne représente parfois qu'un paquet précis d'épisodes
+    // (une série coupée en plusieurs époques) — le contour ET la coche ne doivent alors
+    // refléter QUE ce paquet-là, pas la saison entière.
+    const hasPacket = !!(d._epFrom || d._epTo);
+    const from = hasPacket ? (d._epFrom || d._epTo) : 1;
+    const to = hasPacket ? (d._epTo || d._epFrom) : d.episodes;
+    const packetTotal = Math.max(1, to - from + 1);
+    let done = 0;
+    for (let n = from; n <= to; n++){ if (watchedMap[n]) done++; }
+    const pct = Math.min(100, Math.round(done / packetTotal * 100));
+    isFullyWatched = pct >= 100;
+    if (!isFullyWatched && pct > 0) borderStyle = ` style="border-image:conic-gradient(#2ecc71 ${pct}%, rgba(255,255,255,.18) 0) 1"`;
+  } else {
+    isFullyWatched = !!p.watched;
+  }
+
   return `
-    <div class="mosaic-item ${p.watched?'watched':''}" onclick="openDetail('${cid}','${d._placementId||''}')">
+    <div class="mosaic-item ${isFullyWatched?'watched':''}"${borderStyle} onclick="openDetail('${cid}','${d._placementId||''}')">
       ${d.poster ? `<img src="${d.poster}">` : `<div class="mosaic-item-ph">${d.title}</div>`}
-      ${p.watched ? '<div class="mosaic-check">✓</div>' : ''}
+      ${isFullyWatched ? '<div class="mosaic-check">✓</div>' : ''}
       ${epLabel ? `<div class="mosaic-ep-badge">${epLabel}</div>` : ''}
     </div>`;
 }
