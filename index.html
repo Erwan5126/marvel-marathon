@@ -1700,6 +1700,10 @@ function renderEpisodeChecklist(catalogId, allEpisodes, epFrom, epTo){
   const pct = total ? Math.round(done/total*100) : 0;
   const epNums = displayEpisodes.map(e => e.episode_number);
   const packetLabel = (epFrom || epTo) ? ` — paquet ${formatEpRangeMarathon(epFrom, epTo)}` : '';
+  // Préserve la position de défilement de la liste d'épisodes : chaque coche remplace
+  // tout le HTML, ce qui la ramènerait sinon en haut à chaque fois.
+  const prevList = document.querySelector('#detailEpisodes .ep-list');
+  const prevScroll = prevList ? prevList.scrollTop : 0;
   document.getElementById('detailEpisodes').innerHTML = `
     <div class="ep-header">
       <span class="ep-header-count">${done}/${total} épisodes vus${packetLabel}</span>
@@ -1717,6 +1721,8 @@ function renderEpisodeChecklist(catalogId, allEpisodes, epFrom, epTo){
           <span class="ep-title">${(e.name||'').replace(/</g,'&lt;')}</span>
         </label>`).join('')}
     </div>`;
+  const newList = document.querySelector('#detailEpisodes .ep-list');
+  if (newList) newList.scrollTop = prevScroll;
 }
 
 function toggleEpisodeFor(catalogId, epNum, total){
