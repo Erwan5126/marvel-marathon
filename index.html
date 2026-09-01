@@ -1461,8 +1461,8 @@ function cardMosaic(d){
     // (une série coupée en plusieurs époques) — le contour ET la coche ne doivent alors
     // refléter QUE ce paquet-là, pas la saison entière.
     const hasPacket = !!(d._epFrom || d._epTo);
-    const from = hasPacket ? (d._epFrom || d._epTo) : 1;
-    const to = hasPacket ? (d._epTo || d._epFrom) : d.episodes;
+    const from = hasPacket ? Number(d._epFrom || d._epTo) : 1;
+    const to = hasPacket ? Number(d._epTo || d._epFrom) : d.episodes;
     const packetTotal = Math.max(1, to - from + 1);
     let done = 0;
     for (let n = from; n <= to; n++){ if (watchedMap[n]) done++; }
@@ -1690,8 +1690,9 @@ document.addEventListener('keydown', e => {
 function renderEpisodeChecklist(catalogId, allEpisodes, epFrom, epTo){
   const p = progress[catalogId] || {};
   const watchedMap = p.watchedEpisodes || {};
-  const displayEpisodes = (epFrom || epTo)
-    ? allEpisodes.filter(e => (!epFrom || e.episode_number >= epFrom) && (!epTo || e.episode_number <= epTo))
+  const epFromNum = epFrom ? Number(epFrom) : null, epToNum = epTo ? Number(epTo) : null;
+  const displayEpisodes = (epFromNum || epToNum)
+    ? allEpisodes.filter(e => (!epFromNum || e.episode_number >= epFromNum) && (!epToNum || e.episode_number <= epToNum))
     : allEpisodes;
   const fullTotal = allEpisodes.length;
   const total = displayEpisodes.length;
