@@ -501,6 +501,11 @@ function setFilter(mode){
 
 // ── Rendu de la frise ──
 function fmtYear(d){ return d.year || (d.releaseDate||'').slice(0,4) || ''; }
+// Clé de tri pour une date de sortie réelle : une releaseDate vide (programme
+// annoncé sans date TMDB) doit se classer APRÈS tout ce qui est daté, jamais avant.
+function releaseDateSortKey(d){
+  return (d && d.releaseDate) ? d.releaseDate : '9999-99-99';
+}
 function hexToRgba(hex, alpha){
   hex = (hex||'#888888').replace('#','');
   if (hex.length === 3) hex = hex.split('').map(c=>c+c).join('');
@@ -533,7 +538,7 @@ function storyDateCompare(a, b){
   }
   const oa = a._yearOrder, ob = b._yearOrder;
   if (oa != null && ob != null && oa !== ob) return oa - ob;
-  return (a.releaseDate||'').localeCompare(b.releaseDate||'');
+  return releaseDateSortKey(a).localeCompare(releaseDateSortKey(b));
 }
 // Saisie au format JJMMAAAA (chiffres seuls, sans séparateur) ↔ stockage interne AAAA[-MM[-JJ]].
 // 8 chiffres = jour+mois+année, 6 = mois+année, 4 = année seule.
@@ -620,7 +625,7 @@ function renderBoard(){
   const yearOf = sortMode === 'chrono'
     ? (d => { const parts = splitStoryDate(d._storyDate); return parts ? parts.y : '?'; })
     : (d => fmtYear(d) || '?');
-  const dateSort = sortMode === 'chrono' ? storyDateCompare : ((a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||''));
+  const dateSort = sortMode === 'chrono' ? storyDateCompare : ((a,b) => releaseDateSortKey(a).localeCompare(releaseDateSortKey(b)));
 
   // Construit la liste des colonnes : tronc de chaque univers, avec ses branches
   // placées à gauche ou à droite selon la préférence enregistrée (par défaut : droite)
@@ -661,6 +666,9 @@ function renderBoard(){
   // Années réellement présentes (toutes colonnes confondues), triées numériquement
   // (un tri alphabétique classerait mal les années négatives, av. J.-C.)
   const years = [...new Set(items.map(yearOf))].filter(y => y !== '?').sort((a,b) => parseInt(a,10) - parseInt(b,10));
+  // Programmes sans date connue (pas d'année narrative ni de date de sortie) : on les
+  // regroupe sous une bande "?" tout en bas de la frise, jamais en tête.
+  if (items.some(d => yearOf(d) === '?')) years.push('?');
 
   // Classement GLOBAL par date exacte à l'intérieur de chaque année (toutes colonnes
   // confondues) : chaque programme a sa propre ligne, même si un autre univers a
