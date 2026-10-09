@@ -20,6 +20,13 @@
   // Ta clé API TMDB (v3 auth) — https://www.themoviedb.org/settings/api
   const TMDB_API_KEY = "e20ba528e5cd6b53f1f54ceea974fa34";
 
+  // Clé de tri pour "Ordre de sortie" : une date de sortie non encore annoncée
+  // (releaseDate vide, ex. programme tout juste révélé sans date TMDB) doit se
+  // placer APRÈS tous les programmes datés, jamais avant.
+  function releaseDateSortKey(d){
+    return (d && d.releaseDate) ? d.releaseDate : '9999-99-99';
+  }
+
   // Config Firebase — Console Firebase > Paramètres du projet > Vos applications
   const FIREBASE_CONFIG = {
     apiKey: "AIzaSyDksS5LtZxUDWHPBjKNZCFSWn3ztYqIc9Y",
@@ -86,7 +93,7 @@ button{font-family:inherit}
 .admin-label{font-size:9px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;font-weight:700;flex-shrink:0}
 .add-btn{padding:5px 14px;border-radius:14px;border:1px solid var(--gold);background:transparent;color:var(--gold);font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap}
 
-.container{max-width:1100px;margin:0 auto;padding:1rem;padding-bottom:calc(2rem + env(safe-area-inset-bottom))}
+.container{max-width:1600px;margin:0 auto;padding:1rem;padding-bottom:calc(2rem + env(safe-area-inset-bottom))}
 
 .studio-section{margin-bottom:2rem}
 .studio-header{display:flex;align-items:center;gap:10px;padding:.5rem 0;margin-bottom:.75rem;cursor:pointer;user-select:none}
@@ -388,6 +395,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
         <button class="btn btn-primary" id="detailWatchBtn" onclick="toggleWatched()"></button>
         <button class="btn btn-secondary" id="detailOwnedBtn" onclick="toggleOwned()"></button>
         <button class="btn btn-secondary" id="detailAdminEdit" style="display:none" onclick="openEdit()">Modifier</button>
+        <button class="btn btn-secondary" id="detailAdminRefresh" style="display:none" onclick="refreshProgramInfo()">↻ Rafraîchir infos</button>
         <button class="btn btn-secondary" id="detailAdminAssign" style="display:none" onclick="openAssignFromDetail()">Univers</button>
         <button class="btn btn-secondary" id="detailAdminDelete" style="display:none" onclick="deleteCurrentItem()">Supprimer</button>
       </div>
@@ -594,7 +602,7 @@ function renderBoard(){
     const branchNames = [...new Set(uItems.filter(d => d.branch).map(d => d.branch))];
     const sortFn = sortMode === 'chrono'
       ? (a,b) => (a.chronoOrder ?? 9999) - (b.chronoOrder ?? 9999)
-      : (a,b) => (a.releaseDate||'').localeCompare(b.releaseDate||'');
+      : (a,b) => releaseDateSortKey(a).localeCompare(releaseDateSortKey(b));
     trunk.sort(sortFn);
     return `
       <div class="uni-col" data-uni="${u.id}">
@@ -945,8 +953,9 @@ function maybeInitialScroll(){
   scrollToFirstUnwatched();
 }
 function listenCatalog(){
-  db.collection('catalog').orderBy('releaseDate').onSnapshot(snap => {
-    catalog = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  db.collection('catalog').onSnapshot(snap => {
+    catalog = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a,b) => releaseDateSortKey(a).localeCompare(releaseDateSortKey(b)));
     buildFilters();
     render();
     maybeInitialScroll();
@@ -1161,6 +1170,67 @@ function deleteCurrentItem(){
   if (!currentDetailId) return;
   if (!confirm('Supprimer ce programme du catalogue pour tout le monde ?')) return;
   db.collection('catalog').doc(currentDetailId).delete().then(() => closeOverlay('detailOverlay'));
+}
+
+// ── Rafraîchir les infos TMDB d'un programme déjà en base (admin) ──
+// Les fiches sont figées au moment de l'ajout (titre, synopsis, date de
+// sortie, durée, affiche, nb d'épisodes) : ce bouton refait l'appel TMDB
+// et réécrit ces champs avec les valeurs à jour.
+async function refreshProgramInfo(){
+  if (!isAdmin || !currentDetailId) return;
+  const d = catalog.find(x => x.id === currentDetailId);
+  if (!d) return;
+  if (!d.tmdbId || !d.tmdbType){
+    alert("Ce programme n'a pas été ajouté depuis TMDB, impossible de le rafraîchir automatiquement.");
+    return;
+  }
+  const btn = document.getElementById('detailAdminRefresh');
+  const label = btn.textContent;
+  btn.textContent = 'Rafraîchissement…';
+  btn.disabled = true;
+  try {
+    const update = {};
+    if (d.tmdbType === 'movie'){
+      const res = await fetch(`https://api.themoviedb.org/3/movie/${d.tmdbId}?api_key=${TMDB_API_KEY}&language=fr-FR`);
+      const r = await res.json();
+      if (r.success === false) throw new Error(r.status_message || 'Film introuvable sur TMDB');
+      update.title = r.title || d.title;
+      update.overview = r.overview || '';
+      update.year = (r.release_date||'').slice(0,4);
+      update.releaseDate = r.release_date || '';
+      update.duration = r.runtime || d.duration || 0;
+      if (r.poster_path) update.poster = 'https://image.tmdb.org/t/p/w342'+r.poster_path;
+    } else if (d.tmdbType === 'tv' && d.tmdbSeason){
+      const [showRes, seasonRes] = await Promise.all([
+        fetch(`https://api.themoviedb.org/3/tv/${d.tmdbId}?api_key=${TMDB_API_KEY}&language=fr-FR`),
+        fetch(`https://api.themoviedb.org/3/tv/${d.tmdbId}/season/${d.tmdbSeason}?api_key=${TMDB_API_KEY}&language=fr-FR`)
+      ]);
+      const show = await showRes.json();
+      const season = await seasonRes.json();
+      if (season.success === false) throw new Error(season.status_message || 'Saison introuvable sur TMDB');
+      const epRuntimes = (season.episodes||[]).map(e => e.runtime).filter(Boolean);
+      const avgRuntime = epRuntimes.length ? Math.round(epRuntimes.reduce((a,b)=>a+b,0)/epRuntimes.length) : (d.duration || 0);
+      const baseName = show.name || (d.title||'').split(' — Saison')[0];
+      update.title = `${baseName} — Saison ${d.tmdbSeason}`;
+      update.overview = season.overview || show.overview || '';
+      update.year = (season.air_date||'').slice(0,4);
+      update.releaseDate = season.air_date || '';
+      update.duration = avgRuntime;
+      update.episodes = (season.episodes||[]).length;
+      if (season.poster_path) update.poster = 'https://image.tmdb.org/t/p/w342'+season.poster_path;
+      else if (show.poster_path) update.poster = 'https://image.tmdb.org/t/p/w342'+show.poster_path;
+    } else {
+      throw new Error('Type de programme non reconnu.');
+    }
+    await db.collection('catalog').doc(d.id).update(update);
+    lastEpisodesCache = null;
+    openDetail(d.id, currentDetailPlacementId);
+  } catch(err){
+    alert('Erreur de rafraîchissement : ' + err.message);
+  } finally {
+    btn.textContent = label;
+    btn.disabled = false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1580,6 +1650,7 @@ async function openDetail(id, placementId){
   document.getElementById('detailAdminDelete').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminEdit').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminAssign').style.display = isAdmin ? 'inline-block' : 'none';
+  document.getElementById('detailAdminRefresh').style.display = (isAdmin && d.tmdbId) ? 'inline-block' : 'none';
   updateDetailNavButtons();
 
   const ownedBtn = document.getElementById('detailOwnedBtn');
