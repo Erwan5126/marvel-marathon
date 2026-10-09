@@ -1309,8 +1309,11 @@ function parseStoryDateMarathon(s){
 function effectiveChronoInfo(d){
   const placements = Array.isArray(d.chronoPlacements) ? d.chronoPlacements : [];
   if (placements.length === 0){
-    const parts = (d.releaseDate||'').split('-');
-    return { year: parseInt(parts[0],10)||0, month: parts[1]?parseInt(parts[1],10):null, day: parts[2]?parseInt(parts[2],10):null, yearOrder: null, releaseDate: d.releaseDate||'' };
+    // Pas de date de sortie connue (programme annoncé sans date TMDB) : on le place
+    // tout à la fin de l'ordre chronologique plutôt qu'en année 0 (= en tête).
+    if (!d.releaseDate) return { year: 9999, month: null, day: null, yearOrder: null, releaseDate: '' };
+    const parts = d.releaseDate.split('-');
+    return { year: parseInt(parts[0],10)||9999, month: parts[1]?parseInt(parts[1],10):null, day: parts[2]?parseInt(parts[2],10):null, yearOrder: null, releaseDate: d.releaseDate||'' };
   }
   // Clé composite (année, mois, jour puis ordre manuel en dernier recours) pour trouver
   // le placement le plus ancien de ce programme, même en cas d'égalité de date exacte.
@@ -1332,7 +1335,7 @@ function chronoCompareItems(a, b){
     if (ia.day != null && ib.day != null && ia.day !== ib.day) return ia.day - ib.day;
   }
   if (ia.yearOrder != null && ib.yearOrder != null && ia.yearOrder !== ib.yearOrder) return ia.yearOrder - ib.yearOrder;
-  return (ia.releaseDate||'').localeCompare(ib.releaseDate||'');
+  return releaseDateSortKey(ia).localeCompare(releaseDateSortKey(ib));
 }
 
 // ── Ordre chronologique "logique" pour la Mosaïque : au lieu de trier uniquement par
