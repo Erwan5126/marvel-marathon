@@ -393,6 +393,23 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   </div>
 </div>
 
+<!-- Résumé d'un épisode précis (dans la liste de visionnage d'une saison) -->
+<div class="overlay" id="episodeSummaryOverlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeOverlay('episodeSummaryOverlay')">✕</button>
+    <div class="modal-title" id="episodeSummaryTitle">Résumé</div>
+    <div id="episodeSummaryBody" style="white-space:pre-wrap;line-height:1.65;font-size:14px;max-height:45vh;overflow:auto;margin-top:12px"></div>
+    <div class="field" id="episodeSummaryEditWrap" style="display:none;margin-top:12px">
+      <textarea id="episodeSummaryEdit" rows="7" placeholder="Ce qui se passe dans cet épisode, pourquoi il compte dans l'histoire globale…"></textarea>
+    </div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn btn-secondary" id="episodeSummaryEditBtn" style="display:none" onclick="startEditEpisodeSummary()">Modifier</button>
+      <button class="btn btn-primary" id="episodeSummarySaveBtn" style="display:none" onclick="saveEpisodeSummary()">Enregistrer</button>
+      <button class="btn btn-primary" id="episodeSummaryCloseBtn" onclick="closeOverlay('episodeSummaryOverlay')">Fermer</button>
+    </div>
+  </div>
+</div>
+
 <!-- Fiche programme -->
 <div class="overlay" id="detailOverlay">
   <div class="modal" id="detailModal" style="position:relative;padding:0">
@@ -1160,7 +1177,7 @@ function openAddSearch(){
   document.getElementById('addOverlay').classList.add('open');
 }
 
-// ── Édition d'un programme existant (studio / type / résumé narratif) ──
+// ── Édition d'un programme existant (studio / type / résumé narratif général) ──
 let editingId = null;
 function openEdit(){
   if (!currentDetailId) return;
@@ -1196,6 +1213,46 @@ function openSummary(){
     || "Pas encore de résumé pour ce programme.";
   document.getElementById('summaryEditBtn').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('summaryOverlay').classList.add('open');
+}
+
+// ── Résumé d'un épisode précis (texte libre rempli par l'admin, par n° d'épisode
+// — stocké sur la saison concernée, indépendamment du découpage en Timeline) ──
+let episodeSummaryCtx = null; // { catalogId, epNum }
+function openEpisodeSummary(catalogId, epNum, epTitle){
+  const d = catalog.find(x => x.id === catalogId);
+  if (!d) return;
+  episodeSummaryCtx = { catalogId, epNum };
+  const text = (d.episodeSummaries && d.episodeSummaries[epNum]) || '';
+  document.getElementById('episodeSummaryTitle').textContent = `E${epNum}${epTitle ? ' — '+epTitle : ''}`;
+  const body = document.getElementById('episodeSummaryBody');
+  body.textContent = text || "Pas encore de résumé pour cet épisode.";
+  body.style.display = 'block';
+  document.getElementById('episodeSummaryEditWrap').style.display = 'none';
+  document.getElementById('episodeSummaryEditBtn').style.display = isAdmin ? 'inline-block' : 'none';
+  document.getElementById('episodeSummarySaveBtn').style.display = 'none';
+  document.getElementById('episodeSummaryOverlay').classList.add('open');
+}
+function startEditEpisodeSummary(){
+  if (!episodeSummaryCtx) return;
+  const d = catalog.find(x => x.id === episodeSummaryCtx.catalogId);
+  const text = (d && d.episodeSummaries && d.episodeSummaries[episodeSummaryCtx.epNum]) || '';
+  document.getElementById('episodeSummaryBody').style.display = 'none';
+  document.getElementById('episodeSummaryEditWrap').style.display = 'block';
+  document.getElementById('episodeSummaryEdit').value = text;
+  document.getElementById('episodeSummaryEditBtn').style.display = 'none';
+  document.getElementById('episodeSummarySaveBtn').style.display = 'inline-block';
+}
+function saveEpisodeSummary(){
+  if (!episodeSummaryCtx) return;
+  const { catalogId, epNum } = episodeSummaryCtx;
+  const d = catalog.find(x => x.id === catalogId);
+  const text = document.getElementById('episodeSummaryEdit').value.trim();
+  const current = { ...((d && d.episodeSummaries) || {}) };
+  if (text) current[epNum] = text; else delete current[epNum];
+  db.collection('catalog').doc(catalogId).update({
+    episodeSummaries: Object.keys(current).length ? current : firebase.firestore.FieldValue.delete()
+  }).then(() => closeOverlay('episodeSummaryOverlay'))
+    .catch(err => alert('Erreur : ' + err.message));
 }
 
 function deleteCurrentItem(){
@@ -1812,6 +1869,8 @@ document.addEventListener('keydown', e => {
 });
 
 function renderEpisodeChecklist(catalogId, allEpisodes, epFrom, epTo){
+  const d = catalog.find(x => x.id === catalogId) || {};
+  const epSummaries = d.episodeSummaries || {};
   const p = progress[catalogId] || {};
   const watchedMap = p.watchedEpisodes || {};
   const epFromNum = epFrom ? Number(epFrom) : null, epToNum = epTo ? Number(epTo) : null;
@@ -1838,12 +1897,17 @@ function renderEpisodeChecklist(catalogId, allEpisodes, epFrom, epTo){
     </div>
     <div class="ep-progress-wrap"><div class="ep-progress-fill" style="width:${pct}%"></div></div>
     <div class="ep-list">
-      ${displayEpisodes.map(e => `
+      ${displayEpisodes.map(e => {
+        const hasSummary = !!epSummaries[e.episode_number];
+        const showSummaryBtn = isAdmin || hasSummary;
+        return `
         <label class="ep-row">
           <input type="checkbox" ${watchedMap[e.episode_number]?'checked':''} onchange="toggleEpisodeFor('${catalogId}', ${e.episode_number}, ${fullTotal})">
           <span class="ep-num">E${e.episode_number}</span>
           <span class="ep-title">${(e.name||'').replace(/</g,'&lt;')}</span>
-        </label>`).join('')}
+          ${showSummaryBtn ? `<button type="button" class="studio-mini-btn" title="Résumé de l'épisode" style="flex-shrink:0" onclick='openEpisodeSummary("${catalogId}", ${e.episode_number}, ${JSON.stringify(e.name||'').replace(/'/g,"&#39;")})'>${hasSummary ? '📖' : '➕'}</button>` : ''}
+        </label>`;
+      }).join('')}
     </div>`;
   const newList = document.querySelector('#detailEpisodes .ep-list');
   if (newList) newList.scrollTop = prevScroll;
