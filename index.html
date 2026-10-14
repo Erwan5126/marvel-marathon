@@ -358,7 +358,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 </div>
 
 <!-- Édition studio/type d'un programme existant (admin) -->
-<div class="overlay" id="editOverlay">
+<div class="overlay" id="editOverlay" style="z-index:110">
   <div class="modal">
     <div class="modal-title">Modifier</div>
     <div class="field"><label>Studio</label>
@@ -381,7 +381,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 </div>
 
 <!-- Résumé & importance dans le récit global -->
-<div class="overlay" id="summaryOverlay">
+<div class="overlay" id="summaryOverlay" style="z-index:110">
   <div class="modal">
     <button class="close-x" onclick="closeOverlay('summaryOverlay')">✕</button>
     <div class="modal-title" id="summaryTitle">Résumé</div>
@@ -394,7 +394,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 </div>
 
 <!-- Résumé d'un épisode précis (dans la liste de visionnage d'une saison) -->
-<div class="overlay" id="episodeSummaryOverlay">
+<div class="overlay" id="episodeSummaryOverlay" style="z-index:110">
   <div class="modal">
     <button class="close-x" onclick="closeOverlay('episodeSummaryOverlay')">✕</button>
     <div class="modal-title" id="episodeSummaryTitle">Résumé</div>
