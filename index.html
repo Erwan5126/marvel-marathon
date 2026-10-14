@@ -1408,6 +1408,12 @@ function buildChronoOrderInstances(items){
   // rapprocherait d'eux — on le garde de côté pour l'ajouter après coup, à la fin.
   const placedNodeIds = [...new Set(allPlacements.map(p=>p.nodeId))];
   const nodeIdSet = new Set(placedNodeIds);
+  // Deux listes : une sur le catalogue COMPLET (pour que les comparaisons de dates
+  // pendant le tri restent correctes même pour un maillon de chaîne d'un studio
+  // actuellement exclu du filtre — sinon sa date "disparaît" et casse l'ordre de
+  // tout ce qui vient après lui dans la même colonne univers/branche), et une sur
+  // les éléments filtrés (pour décider, à la toute fin, quoi afficher réellement).
+  const fullItemById = {}; catalog.forEach(d => fullItemById[d.id] = d);
   const itemById = {}; items.forEach(d => itemById[d.id] = d);
 
   const inDegree = {}; placedNodeIds.forEach(id => inDegree[id] = 0);
@@ -1416,7 +1422,7 @@ function buildChronoOrderInstances(items){
     edges[a].forEach(b => { if (nodeIdSet.has(b)) inDegree[b] = (inDegree[b]||0) + 1; });
   });
 
-  const compareNodes = (x, y) => chronoCompareItems(itemById[nodeMeta[x].catalogId] || {}, itemById[nodeMeta[y].catalogId] || {});
+  const compareNodes = (x, y) => chronoCompareItems(fullItemById[nodeMeta[x].catalogId] || {}, fullItemById[nodeMeta[y].catalogId] || {});
   const remaining = new Set(placedNodeIds);
   let available = placedNodeIds.filter(id => inDegree[id] === 0);
   const orderedNodes = [];
