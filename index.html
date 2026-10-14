@@ -1401,19 +1401,24 @@ function buildChronoOrderInstances(items){
   allPlacements.forEach(p => nodeMeta[p.nodeId] = p);
   noPlacementItems.forEach(d => nodeMeta[d.id] = { catalogId: d.id, placementId: null });
 
-  const allNodeIds = [...new Set([...allPlacements.map(p=>p.nodeId), ...noPlacementItems.map(d=>d.id)])];
-  const nodeIdSet = new Set(allNodeIds);
+  // Seuls les paquets réellement affectés à un univers/branche (Timeline) participent
+  // au tri topologique narratif. Un programme pas encore affecté (aucun placement)
+  // n'a aucune position dans le récit : il ne doit jamais s'intercaler entre deux
+  // épisodes de l'histoire au seul prétexte qu'une date de sortie calendaire le
+  // rapprocherait d'eux — on le garde de côté pour l'ajouter après coup, à la fin.
+  const placedNodeIds = [...new Set(allPlacements.map(p=>p.nodeId))];
+  const nodeIdSet = new Set(placedNodeIds);
   const itemById = {}; items.forEach(d => itemById[d.id] = d);
 
-  const inDegree = {}; allNodeIds.forEach(id => inDegree[id] = 0);
+  const inDegree = {}; placedNodeIds.forEach(id => inDegree[id] = 0);
   Object.keys(edges).forEach(a => {
     if (!nodeIdSet.has(a)) return;
     edges[a].forEach(b => { if (nodeIdSet.has(b)) inDegree[b] = (inDegree[b]||0) + 1; });
   });
 
   const compareNodes = (x, y) => chronoCompareItems(itemById[nodeMeta[x].catalogId] || {}, itemById[nodeMeta[y].catalogId] || {});
-  const remaining = new Set(allNodeIds);
-  let available = allNodeIds.filter(id => inDegree[id] === 0);
+  const remaining = new Set(placedNodeIds);
+  let available = placedNodeIds.filter(id => inDegree[id] === 0);
   const orderedNodes = [];
   while (available.length){
     available.sort(compareNodes);
@@ -1428,6 +1433,10 @@ function buildChronoOrderInstances(items){
     });
   }
   if (remaining.size) [...remaining].sort(compareNodes).forEach(id => orderedNodes.push(id));
+
+  // Programmes non affectés dans Timeline : regroupés à la fin, triés entre eux par
+  // date de sortie (sans date connue = en tout dernier), jamais mélangés au récit.
+  noPlacementItems.slice().sort(chronoCompareItems).forEach(d => orderedNodes.push(d.id));
 
   // 4. Convertit chaque nœud en tuile d'affichage — un programme à plusieurs paquets
   // donne donc plusieurs tuiles, une par paquet, chacune à sa position calculée.
