@@ -370,9 +370,25 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
         <option>Moyen-Metrage</option><option>Web Série</option>
       </select>
     </div>
+    <div class="field"><label>Résumé &amp; importance dans le récit global</label>
+      <textarea id="editStorySummary" rows="8" placeholder="Ce qui se passe dans ce programme, pourquoi il compte dans l'histoire globale, ce qu'il faut en retenir pour la suite…"></textarea>
+    </div>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('editOverlay')">Annuler</button>
       <button class="btn btn-primary" onclick="saveEdit()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<!-- Résumé & importance dans le récit global -->
+<div class="overlay" id="summaryOverlay">
+  <div class="modal">
+    <button class="close-x" onclick="closeOverlay('summaryOverlay')">✕</button>
+    <div class="modal-title" id="summaryTitle">Résumé</div>
+    <div id="summaryBody" style="white-space:pre-wrap;line-height:1.65;font-size:14px;max-height:55vh;overflow:auto;margin-top:12px"></div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn btn-secondary" id="summaryEditBtn" style="display:none" onclick="closeOverlay('summaryOverlay');openEdit()">Modifier</button>
+      <button class="btn btn-primary" onclick="closeOverlay('summaryOverlay')">Fermer</button>
     </div>
   </div>
 </div>
@@ -394,6 +410,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
       <div class="detail-actions">
         <button class="btn btn-primary" id="detailWatchBtn" onclick="toggleWatched()"></button>
         <button class="btn btn-secondary" id="detailOwnedBtn" onclick="toggleOwned()"></button>
+        <button class="btn btn-secondary" id="detailSummaryBtn" style="display:none" onclick="openSummary()">📖 Résumé</button>
         <button class="btn btn-secondary" id="detailAdminEdit" style="display:none" onclick="openEdit()">Modifier</button>
         <button class="btn btn-secondary" id="detailAdminRefresh" style="display:none" onclick="refreshProgramInfo()">↻ Rafraîchir infos</button>
         <button class="btn btn-secondary" id="detailAdminAssign" style="display:none" onclick="openAssignFromDetail()">Univers</button>
@@ -1143,7 +1160,7 @@ function openAddSearch(){
   document.getElementById('addOverlay').classList.add('open');
 }
 
-// ── Édition d'un programme existant (studio / type) ──
+// ── Édition d'un programme existant (studio / type / résumé narratif) ──
 let editingId = null;
 function openEdit(){
   if (!currentDetailId) return;
@@ -1153,17 +1170,32 @@ function openEdit(){
   document.getElementById('editStudio').innerHTML = studioSelectOptions();
   document.getElementById('editStudio').value = d.studio;
   document.getElementById('editType').value = d.type;
+  document.getElementById('editStorySummary').value = d.storySummary || '';
   document.getElementById('editOverlay').classList.add('open');
 }
 function saveEdit(){
   if (!editingId) return;
+  const summary = document.getElementById('editStorySummary').value.trim();
   db.collection('catalog').doc(editingId).update({
     studio: document.getElementById('editStudio').value,
-    type: document.getElementById('editType').value
+    type: document.getElementById('editType').value,
+    storySummary: summary ? summary : firebase.firestore.FieldValue.delete()
   }).then(() => {
     closeOverlay('editOverlay');
     closeOverlay('detailOverlay');
   }).catch(err => alert('Erreur : ' + err.message));
+}
+
+// ── Résumé & importance dans le récit global (texte libre rempli par l'admin) ──
+function openSummary(){
+  if (!currentDetailId) return;
+  const d = catalog.find(x => x.id === currentDetailId);
+  if (!d) return;
+  document.getElementById('summaryTitle').textContent = d.title;
+  document.getElementById('summaryBody').textContent = d.storySummary
+    || "Pas encore de résumé pour ce programme.";
+  document.getElementById('summaryEditBtn').style.display = isAdmin ? 'inline-block' : 'none';
+  document.getElementById('summaryOverlay').classList.add('open');
 }
 
 function deleteCurrentItem(){
@@ -1669,6 +1701,9 @@ async function openDetail(id, placementId){
   document.getElementById('detailAdminEdit').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminAssign').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminRefresh').style.display = (isAdmin && d.tmdbId) ? 'inline-block' : 'none';
+  const summaryBtn = document.getElementById('detailSummaryBtn');
+  summaryBtn.style.display = (isAdmin || d.storySummary) ? 'inline-block' : 'none';
+  summaryBtn.textContent = d.storySummary ? '📖 Résumé' : '📖 Ajouter un résumé';
   updateDetailNavButtons();
 
   const ownedBtn = document.getElementById('detailOwnedBtn');
