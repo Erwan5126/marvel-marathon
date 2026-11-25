@@ -132,6 +132,8 @@ button{font-family:inherit}
 .star.lit{color:var(--gold)}
 
 .mosaic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
+.uni-branch-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin:14px 0 8px}
+.uni-branch-label:first-child{margin-top:0}
 .mosaic-item{position:relative;aspect-ratio:2/3;border-radius:8px;overflow:hidden;cursor:pointer;background:#111;border:2px solid transparent}
 .mosaic-item.watched{border-color:#2ecc71}
 .mosaic-item img{width:100%;height:100%;object-fit:cover;display:block}
@@ -287,6 +289,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="segmented">
       <button class="on" id="mosaicSortReleaseBtn" onclick="setMosaicSort('release')">Ordre de sortie</button>
       <button id="mosaicSortChronoBtn" onclick="setMosaicSort('chrono')">Chronologique</button>
+      <button id="mosaicSortUniverseBtn" onclick="setMosaicSort('universe')">Par univers</button>
     </div>
   </div>
   <div class="controls-row">
@@ -593,6 +596,7 @@ function listenUniverses(){
   db.collection('universes').orderBy('order').onSnapshot(snap => {
     universes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if (currentPage === 'timelines') renderBoard();
+    if (currentPage === 'marathon' && currentView === 'mosaic' && mosaicSort === 'universe') render();
   });
 }
 function listenLinks(){
@@ -1376,15 +1380,21 @@ function setView(v, btn){
   if (v === 'mosaic') scrollToFirstUnwatched();
 }
 
-let mosaicSort = localStorage.getItem('mm-mosaic-sort') || 'release';
+let mosaicSort = localStorage.getItem('mm-mosaic-sort') || 'release'; // 'release' | 'chrono' | 'universe'
+if (!['release','chrono','universe'].includes(mosaicSort)) mosaicSort = 'release';
+function syncMosaicSortButtons(){
+  document.getElementById('mosaicSortReleaseBtn').classList.toggle('on', mosaicSort === 'release');
+  document.getElementById('mosaicSortChronoBtn').classList.toggle('on', mosaicSort === 'chrono');
+  document.getElementById('mosaicSortUniverseBtn').classList.toggle('on', mosaicSort === 'universe');
+}
 function setMosaicSort(mode){
   mosaicSort = mode;
   localStorage.setItem('mm-mosaic-sort', mode);
-  document.getElementById('mosaicSortReleaseBtn').classList.toggle('on', mode === 'release');
-  document.getElementById('mosaicSortChronoBtn').classList.toggle('on', mode === 'chrono');
+  syncMosaicSortButtons();
   render();
   if (currentView === 'mosaic') scrollToFirstUnwatched();
 }
+syncMosaicSortButtons();
 // Analyse une date narrative (identique à celle de la page Timelines) — gère
 // les précisions partielles (année seule, mois+année) et les années av. J.-C.
 function parseStoryDateMarathon(s){
@@ -1545,10 +1555,81 @@ function buildChronoOrderInstances(items){
   return result;
 }
 
+// ── Mode "Par univers" : même regroupement que la page Timelines — une section par
+// univers (dans l'ordre défini par l'admin), le tronc d'abord puis chaque branche,
+// et dans chaque colonne les paquets triés par date narrative. Un programme placé
+// dans plusieurs univers/branches (ou en plusieurs paquets) apparaît à chaque endroit
+// où il est placé. Les programmes sans aucun placement vont dans une dernière section.
+function buildUniverseSections(items){
+  const itemById = {}; items.forEach(d => itemById[d.id] = d);
+  const knownUniverse = {}; universes.forEach(u => knownUniverse[u.id] = true);
+  const byCol = {}; // universeId -> { branche ('' = tronc) -> [tuiles] }
+  const placedIds = new Set();
+  catalog.forEach(d => {
+    if (!itemById[d.id]) return; // filtré par la recherche/les filtres en cours
+    (d.chronoPlacements||[]).forEach(p => {
+      if (!p.universe || !knownUniverse[p.universe]) return;
+      placedIds.add(d.id);
+      const col = (byCol[p.universe] = byCol[p.universe] || {});
+      const b = p.branch || '';
+      (col[b] = col[b] || []).push({ ...d, _catalogId: d.id, _placementId: p.id, _epFrom: p.epFrom||null, _epTo: p.epTo||null, _storyDate: p.storyDate||'', _yearOrder: p.yearOrder });
+    });
+  });
+  // Date narrative absente = en dernier dans sa colonne (et non en année 0 = en tête).
+  const cmpTiles = (a, b) => {
+    const pa = a._storyDate ? parseStoryDateMarathon(a._storyDate) : { year: 9999, month: null, day: null };
+    const pb = b._storyDate ? parseStoryDateMarathon(b._storyDate) : { year: 9999, month: null, day: null };
+    if (pa.year !== pb.year) return pa.year - pb.year;
+    if (pa.month != null && pb.month != null){
+      if (pa.month !== pb.month) return pa.month - pb.month;
+      if (pa.day != null && pb.day != null && pa.day !== pb.day) return pa.day - pb.day;
+    }
+    const oa = (a._yearOrder!=null && a._yearOrder!=='') ? Number(a._yearOrder) : null;
+    const ob = (b._yearOrder!=null && b._yearOrder!=='') ? Number(b._yearOrder) : null;
+    if (oa != null && ob != null && oa !== ob) return oa - ob;
+    return releaseDateSortKey(a).localeCompare(releaseDateSortKey(b));
+  };
+  const sections = [];
+  universes.forEach(u => {
+    const col = byCol[u.id];
+    if (!col) return;
+    Object.values(col).forEach(list => list.sort(cmpTiles));
+    const groups = Object.keys(col)
+      .sort((x, y) => (x === '' ? -1 : y === '' ? 1 : cmpTiles(col[x][0], col[y][0]))) // tronc d'abord, puis branches par date de début
+      .map(b => ({ label: b, tiles: col[b] }));
+    sections.push({ key: 'uni:' + u.id, name: u.name, color: u.color || '#888', groups });
+  });
+  const unassigned = items.filter(d => !placedIds.has(d.id)).sort(chronoCompareItems);
+  if (unassigned.length) sections.push({ key: 'uni:none', name: 'Non affectés à un univers', color: '#888', groups: [{ label: '', tiles: unassigned }] });
+  return sections;
+}
+// Tuiles dans l'ordre exact d'affichage (sections repliées exclues) — utilisé pour
+// le défilement vers le premier non-vu et la navigation entre fiches.
+function universeTilesFlat(items){
+  return buildUniverseSections(items).filter(s => !collapsed[s.key]).flatMap(s => s.groups.flatMap(g => g.tiles));
+}
+function renderUniverseSections(items, main){
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  main.innerHTML = buildUniverseSections(items).map(s => {
+    const tiles = s.groups.flatMap(g => g.tiles);
+    const watched = tiles.filter(t => tileProgress(t).isFullyWatched).length;
+    return `
+      <div class="studio-section">
+        <div class="studio-header" onclick="toggleCollapse('${s.key}')">
+          <div class="studio-dot" style="background:${s.color}"></div>
+          <div class="studio-name">${esc(s.name)}</div>
+          <div class="studio-prog">${watched}/${tiles.length} vus</div>
+        </div>
+        ${collapsed[s.key] ? '' : s.groups.map(g => `${g.label ? `<div class="uni-branch-label">${esc(g.label)}</div>` : ''}<div class="mosaic-grid">${g.tiles.map(cardMosaic).join('')}</div>`).join('')}
+      </div>`;
+  }).join('');
+}
+
 function scrollToFirstUnwatched(){
   let list = filteredData();
   if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
-  const idx = list.findIndex(d => !progress[d.id]?.watched);
+  else if (mosaicSort === 'universe') list = universeTilesFlat(list);
+  const idx = list.findIndex(d => !tileProgress(d).isFullyWatched);
   if (idx === -1) return;
   requestAnimationFrame(() => {
     const items = document.querySelectorAll('#main .mosaic-item');
@@ -1613,8 +1694,12 @@ function render(){
     renderTierList(list, main);
   } else {
     // Mosaïque — seule vue de "Mon marathon" désormais
-    if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
-    main.innerHTML = `<div class="mosaic-grid">${list.map(cardMosaic).join('')}</div>`;
+    if (mosaicSort === 'universe'){
+      renderUniverseSections(list, main);
+    } else {
+      if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
+      main.innerHTML = `<div class="mosaic-grid">${list.map(cardMosaic).join('')}</div>`;
+    }
   }
 }
 
@@ -1625,11 +1710,11 @@ function formatEpRangeMarathon(from, to){
   if (from && to && from !== to) return `Ép. ${from}-${to}`;
   return `Ép. ${from || to}`;
 }
-function cardMosaic(d){
+// État "vu" d'une tuile (programme entier, ou paquet d'épisodes précis pour une série
+// découpée en plusieurs paquets) + contour de progression partielle.
+function tileProgress(d){
   const cid = d._catalogId || d.id;
   const p = progress[cid] || {};
-  const epLabel = formatEpRangeMarathon(d._epFrom, d._epTo);
-
   let isFullyWatched = false;
   let borderStyle = '';
   if (d.type === 'Série' && d.episodes){
@@ -1649,6 +1734,12 @@ function cardMosaic(d){
   } else {
     isFullyWatched = !!p.watched;
   }
+  return { isFullyWatched, borderStyle };
+}
+function cardMosaic(d){
+  const cid = d._catalogId || d.id;
+  const epLabel = formatEpRangeMarathon(d._epFrom, d._epTo);
+  const { isFullyWatched, borderStyle } = tileProgress(d);
 
   return `
     <div class="mosaic-item ${isFullyWatched?'watched':''}"${borderStyle} onclick="openDetail('${cid}','${d._placementId||''}')">
@@ -1810,6 +1901,7 @@ function navList(){
       .sort((a,b) => (progress[a.id]?.tierPos ?? 9999) - (progress[b.id]?.tierPos ?? 9999));
   }
   if (currentView === 'mosaic' && mosaicSort === 'chrono') return buildChronoOrderInstances(list);
+  if (currentView === 'mosaic' && mosaicSort === 'universe') return universeTilesFlat(list);
   return list;
 }
 
