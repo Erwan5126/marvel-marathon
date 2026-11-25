@@ -69,6 +69,10 @@ button{font-family:inherit}
 .admin-btn.active{border-color:var(--gold);color:var(--gold)}
 
 .stats-bar{display:flex;justify-content:center;gap:1.75rem;margin:10px 0 0;flex-wrap:wrap}
+.rt-row{display:flex;gap:6px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border,#2a2a2a)}
+.rt-info{flex:1;min-width:0;display:flex;flex-direction:column;font-size:13px}
+.rt-info span{font-size:11px;color:var(--muted)}
+.rt-row input{width:80px}
 .stat{text-align:center}
 .stat-val{font-size:18px;font-weight:600;color:var(--text)}
 .stat-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
@@ -272,9 +276,9 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     </div>
   </div>
   <div class="stats-bar" id="marathonStats">
-    <div class="stat"><div class="stat-val" id="statSeen">0</div><div class="stat-lbl">Vus</div></div>
-    <div class="stat"><div class="stat-val" id="statTotal">0</div><div class="stat-lbl">Total</div></div>
-    <div class="stat"><div class="stat-val" id="statPct">0%</div><div class="stat-lbl">Complété</div></div>
+    <div class="stat"><div class="stat-val"><span id="statSeen">0</span>/<span id="statTotal">0</span></div><div class="stat-lbl">Programmes vus</div></div>
+    <div class="stat"><div class="stat-val"><span id="statTimeSeen">0h</span>/<span id="statTimeTotal">0h</span></div><div class="stat-lbl">Temps de visionnage</div></div>
+    <div class="stat"><div class="stat-val" id="statPct">0%</div><div class="stat-lbl">Complété (durée)</div></div>
   </div>
   <div class="progress-wrap" id="marathonProgressWrap"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
 </div>
@@ -308,6 +312,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <span class="admin-label">Admin</span>
     <button class="add-btn" id="addBtn" onclick="openAddSearch()">+ Ajouter</button>
     <button class="add-btn" id="studioMgrBtn" onclick="openStudioMgr()">⚙ Studios</button>
+    <button class="add-btn" id="runtimeMgrBtn" onclick="openRuntimeMgr()">⏱ Durées</button>
   </div>
 </div>
 
@@ -365,6 +370,17 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   </div>
 </div>
 
+<!-- Durées manquantes (admin) -->
+<div class="overlay" id="runtimeMgrOverlay">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">Durées à compléter</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Programmes sans durée (ou séries sans durée par épisode). « TMDB » relance la récupération, « OK » enregistre la valeur saisie (minutes ; pour une série, durée par épisode).</p>
+    <button class="btn btn-primary" id="runtimeMgrAll" onclick="refetchAllRuntimes(this)" style="margin-bottom:10px">Tout actualiser depuis TMDB</button>
+    <div id="runtimeMgrBody" style="max-height:50vh;overflow:auto"></div>
+    <div class="btn-row"><button class="btn btn-secondary" onclick="closeOverlay('runtimeMgrOverlay')">Fermer</button></div>
+  </div>
+</div>
+
 <!-- Édition studio/type d'un programme existant (admin) -->
 <div class="overlay" id="editOverlay" style="z-index:110">
   <div class="modal">
@@ -377,6 +393,9 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
         <option>Film</option><option>Série</option><option>Court-Metrage</option>
         <option>Moyen-Metrage</option><option>Web Série</option>
       </select>
+    </div>
+    <div class="field"><label id="editDurationLabel">Durée (minutes)</label>
+      <input type="number" min="0" id="editDuration" placeholder="ex. 120">
     </div>
     <div class="field"><label>Résumé &amp; importance dans le récit global</label>
       <textarea id="editStorySummary" rows="8" placeholder="Ce qui se passe dans ce programme, pourquoi il compte dans l'histoire globale, ce qu'il faut en retenir pour la suite…"></textarea>
@@ -1214,14 +1233,100 @@ function confirmAddMovie(r, detail){
     .catch(err => alert('Erreur ajout (vérifie que tu es bien connecté en admin) : ' + err.message));
 }
 
+// ── Durées : une durée par épisode (TMDB, sinon durée moyenne de la série en secours) ──
+function seasonRuntimes(season, show, fallbackAvg){
+  const showRt = (show && show.episode_run_time && show.episode_run_time[0]) || 0;
+  const raw = (season.episodes||[]).map(e => e.runtime || 0);
+  const known = raw.filter(Boolean);
+  const avg = known.length ? Math.round(known.reduce((a,b)=>a+b,0)/known.length) : (showRt || fallbackAvg || 0);
+  return { episodeRuntimes: raw.map(x => x || avg), avg };
+}
+// Durée d'un épisode d'une saison du catalogue (n° 1-based)
+function episodeMinutes(d, n){
+  return (d.episodeRuntimes && d.episodeRuntimes[n-1]) || d.duration || 0;
+}
+// Récupère seulement les durées sur TMDB (sans toucher au reste de la fiche)
+async function fetchRuntimesFor(d){
+  if (!d.tmdbId) throw new Error('pas de lien TMDB');
+  const upd = {};
+  if (d.tmdbType === 'tv' && d.tmdbSeason){
+    const [showRes, seasonRes] = await Promise.all([
+      fetch(`https://api.themoviedb.org/3/tv/${d.tmdbId}?api_key=${TMDB_API_KEY}&language=fr-FR`),
+      fetch(`https://api.themoviedb.org/3/tv/${d.tmdbId}/season/${d.tmdbSeason}?api_key=${TMDB_API_KEY}&language=fr-FR`)
+    ]);
+    const show = await showRes.json(), season = await seasonRes.json();
+    if (season.success === false) throw new Error(season.status_message || 'saison introuvable');
+    const { episodeRuntimes, avg } = seasonRuntimes(season, show, d.duration);
+    upd.episodeRuntimes = episodeRuntimes;
+    if (!d.durationManual && avg) upd.duration = avg;
+  } else {
+    const r = await (await fetch(`https://api.themoviedb.org/3/movie/${d.tmdbId}?api_key=${TMDB_API_KEY}&language=fr-FR`)).json();
+    if (r.success === false) throw new Error(r.status_message || 'film introuvable');
+    if (!d.durationManual && r.runtime) upd.duration = r.runtime;
+  }
+  if (Object.keys(upd).length) await db.collection('catalog').doc(d.id).update(upd);
+  return upd;
+}
+function runtimeIssue(d){
+  if (d.type === 'Série' && d.episodes){
+    if (!d.duration && !(d.episodeRuntimes||[]).some(Boolean)) return 'aucune durée';
+    if (!d.episodeRuntimes || (d.episodeRuntimes||[]).length !== d.episodes) return 'durées par épisode non enregistrées';
+    return '';
+  }
+  return d.duration ? '' : 'aucune durée';
+}
+function openRuntimeMgr(){
+  const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const list = catalog.filter(d => runtimeIssue(d));
+  const body = document.getElementById('runtimeMgrBody');
+  body.innerHTML = list.length ? list.map(d => `
+    <div class="rt-row" data-id="${d.id}">
+      <div class="rt-info"><b>${esc(d.title)}</b><span>${runtimeIssue(d)}${d.duration ? ' · actuel : '+d.duration+' min' : ''}</span></div>
+      <input type="number" min="1" placeholder="${d.type==='Série'?'min/ép.':'min'}" id="rt-${d.id}">
+      <button class="btn btn-secondary" onclick="saveManualRuntime('${d.id}')">OK</button>
+      ${d.tmdbId ? `<button class="btn btn-secondary" onclick="refetchRuntime('${d.id}', this)">TMDB</button>` : ''}
+    </div>`).join('') : '<div class="empty-msg" style="padding:20px">Toutes les durées sont renseignées 👍</div>';
+  document.getElementById('runtimeMgrAll').style.display = list.some(d => d.tmdbId) ? 'inline-block' : 'none';
+  document.getElementById('runtimeMgrAll').textContent = `Tout actualiser depuis TMDB (${list.filter(d=>d.tmdbId).length})`;
+  document.getElementById('runtimeMgrOverlay').classList.add('open');
+}
+async function saveManualRuntime(id){
+  const v = Number(document.getElementById('rt-'+id).value);
+  if (!v || v < 1) return alert('Entre une durée en minutes.');
+  await db.collection('catalog').doc(id).update({ duration: v, durationManual: true })
+    .then(() => { const row = document.querySelector(`.rt-row[data-id="${id}"]`); if (row) row.remove(); })
+    .catch(err => alert('Erreur : ' + err.message));
+}
+async function refetchRuntime(id, btn){
+  const d = catalog.find(x => x.id === id); if (!d) return;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetchRuntimesFor(d);
+    btn.textContent = '✓';
+  } catch(e){ btn.textContent = '✗'; btn.title = e.message; btn.disabled = false; }
+}
+async function refetchAllRuntimes(btn){
+  const list = catalog.filter(d => runtimeIssue(d) && d.tmdbId);
+  btn.disabled = true;
+  let ok = 0, ko = 0;
+  for (let i = 0; i < list.length; i++){
+    btn.textContent = `Actualisation ${i+1}/${list.length}…`;
+    try { await fetchRuntimesFor(list[i]); ok++; } catch(e){ ko++; }
+  }
+  btn.disabled = false;
+  openRuntimeMgr();
+  alert(`${ok} programme(s) mis à jour${ko ? `, ${ko} échec(s)` : ''}. Ceux qui restent dans la liste n'ont pas de durée sur TMDB : saisis-la à la main.`);
+}
+
 async function confirmAddSeries(r){
   const studio = document.getElementById('addStudioSelect').value;
   const checked = [...document.querySelectorAll('.season-check:checked')].map(c => c.value);
+  let showInfo = {};
+  try { showInfo = await (await fetch(`https://api.themoviedb.org/3/tv/${r.id}?api_key=${TMDB_API_KEY}&language=fr-FR`)).json(); } catch(e){}
   for (const seasonNum of checked){
     const sRes = await fetch(`https://api.themoviedb.org/3/tv/${r.id}/season/${seasonNum}?api_key=${TMDB_API_KEY}&language=fr-FR`);
     const season = await sRes.json();
-    const epRuntimes = (season.episodes||[]).map(e => e.runtime).filter(Boolean);
-    const avgRuntime = epRuntimes.length ? Math.round(epRuntimes.reduce((a,b)=>a+b,0)/epRuntimes.length) : 0;
+    const { episodeRuntimes, avg: avgRuntime } = seasonRuntimes(season, showInfo, 0);
     const entry = {
       tmdbId: r.id, tmdbType: 'tv', tmdbSeason: Number(seasonNum),
       title: `${r.name} — Saison ${seasonNum}`,
@@ -1230,6 +1335,7 @@ async function confirmAddSeries(r){
       year: (season.air_date||'').slice(0,4),
       releaseDate: season.air_date || '',
       duration: avgRuntime,
+      episodeRuntimes,
       episodes: (season.episodes||[]).length,
       poster: season.poster_path ? 'https://image.tmdb.org/t/p/w342'+season.poster_path : (r.poster_path ? 'https://image.tmdb.org/t/p/w342'+r.poster_path : ''),
       addedAt: new Date().toISOString()
@@ -1257,12 +1363,18 @@ function openEdit(){
   document.getElementById('editStudio').value = d.studio;
   document.getElementById('editType').value = d.type;
   document.getElementById('editStorySummary').value = d.storySummary || '';
+  document.getElementById('editDuration').value = d.duration || '';
+  document.getElementById('editDurationLabel').textContent = d.type === 'Série' ? 'Durée par épisode (minutes) — utilisée quand TMDB n\'en donne pas' : 'Durée du programme (minutes)';
   document.getElementById('editOverlay').classList.add('open');
 }
 function saveEdit(){
   if (!editingId) return;
   const summary = document.getElementById('editStorySummary').value.trim();
+  const cur = catalog.find(x => x.id === editingId) || {};
+  const dur = Number(document.getElementById('editDuration').value) || 0;
+  const durUpd = (dur && dur !== (cur.duration||0)) ? { duration: dur, durationManual: true } : {};
   db.collection('catalog').doc(editingId).update({
+    ...durUpd,
     studio: document.getElementById('editStudio').value,
     type: document.getElementById('editType').value,
     storySummary: summary ? summary : firebase.firestore.FieldValue.delete()
@@ -1356,7 +1468,7 @@ async function refreshProgramInfo(){
       update.overview = r.overview || '';
       update.year = (r.release_date||'').slice(0,4);
       update.releaseDate = r.release_date || '';
-      update.duration = r.runtime || d.duration || 0;
+      update.duration = d.durationManual ? d.duration : (r.runtime || d.duration || 0);
       if (r.poster_path) update.poster = 'https://image.tmdb.org/t/p/w342'+r.poster_path;
     } else if (d.tmdbType === 'tv' && d.tmdbSeason){
       const [showRes, seasonRes] = await Promise.all([
@@ -1366,14 +1478,14 @@ async function refreshProgramInfo(){
       const show = await showRes.json();
       const season = await seasonRes.json();
       if (season.success === false) throw new Error(season.status_message || 'Saison introuvable sur TMDB');
-      const epRuntimes = (season.episodes||[]).map(e => e.runtime).filter(Boolean);
-      const avgRuntime = epRuntimes.length ? Math.round(epRuntimes.reduce((a,b)=>a+b,0)/epRuntimes.length) : (d.duration || 0);
+      const { episodeRuntimes, avg: avgRuntime } = seasonRuntimes(season, show, d.duration);
+      update.episodeRuntimes = episodeRuntimes;
       const baseName = show.name || (d.title||'').split(' — Saison')[0];
       update.title = `${baseName} — Saison ${d.tmdbSeason}`;
       update.overview = season.overview || show.overview || '';
       update.year = (season.air_date||'').slice(0,4);
       update.releaseDate = season.air_date || '';
-      update.duration = avgRuntime;
+      update.duration = d.durationManual ? d.duration : (avgRuntime || d.duration || 0);
       update.episodes = (season.episodes||[]).length;
       if (season.poster_path) update.poster = 'https://image.tmdb.org/t/p/w342'+season.poster_path;
       else if (show.poster_path) update.poster = 'https://image.tmdb.org/t/p/w342'+show.poster_path;
@@ -1956,13 +2068,39 @@ function fmtDuration(min, episodes){
   return h ? `${h}h${m.toString().padStart(2,'0')}` : `${m}min`;
 }
 
+function fmtHours(min){
+  const h = min/60;
+  return (h >= 100 ? Math.round(h) : Math.round(h*10)/10).toString().replace('.', ',') + 'h';
+}
+// Durée (min) d'un programme : total diffusé et part déjà vue. Séries = durée moyenne d'un épisode × épisodes.
+function programMinutes(d){
+  const dur = d.duration || 0;
+  const p = progress[d.id] || {};
+  if (d.type === 'Série' && d.episodes){
+    const aired = airedEpisodes(d);
+    const n = aired !== null ? Math.min(aired, d.episodes) : d.episodes;
+    const map = p.watchedEpisodes || {};
+    let tot = 0, seen = 0;
+    for (let i = 1; i <= n; i++){
+      const m = episodeMinutes(d, i);
+      tot += m;
+      if (map[i] || (!p.watchedEpisodes && p.watched)) seen += m;
+    }
+    return { total: tot, seen };
+  }
+  return { total: dur, seen: p.watched ? dur : 0 };
+}
 function updateStats(){
   const mine = catalog.filter(d => (currentScope === 'total' || isIncluded(d.id)) && countsInStats(d));
   const total = mine.length;
   const seen = mine.filter(d => tileProgress(d).isFullyWatched).length;
+  let minTotal = 0, minSeen = 0;
+  mine.forEach(d => { const m = programMinutes(d); minTotal += m.total; minSeen += m.seen; });
   document.getElementById('statSeen').textContent = seen;
   document.getElementById('statTotal').textContent = total;
-  const pct = total ? Math.round(seen/total*100) : 0;
+  document.getElementById('statTimeSeen').textContent = fmtHours(minSeen);
+  document.getElementById('statTimeTotal').textContent = fmtHours(minTotal);
+  const pct = minTotal ? Math.round(minSeen/minTotal*100) : (total ? Math.round(seen/total*100) : 0);
   document.getElementById('statPct').textContent = pct + '%';
   document.getElementById('progressFill').style.width = pct + '%';
 }
