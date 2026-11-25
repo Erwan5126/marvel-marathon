@@ -296,11 +296,13 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   </div>
   <div class="controls-row">
     <div class="segmented">
-      <button class="on" id="scopeMineBtn" onclick="setScope('mine')">Mon marathon</button>
       <button id="scopeTotalBtn" onclick="setScope('total')" title="Tous les programmes du catalogue, sans tenir compte de ta sélection">Marathon total</button>
-      <button id="scopeAllBtn" onclick="setScope('manage')">Gestion marathon</button>
+      <button class="on" id="scopeMineBtn" onclick="setScope('mine')">Mon marathon</button>
     </div>
     <div class="filters" id="typeFilters"></div>
+    <div class="segmented">
+      <button id="scopeAllBtn" onclick="setScope('manage')">Gestion marathon</button>
+    </div>
   </div>
   <div class="admin-row" id="adminRow" style="display:none">
     <span class="admin-label">Admin</span>
