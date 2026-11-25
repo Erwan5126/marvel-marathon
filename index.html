@@ -297,6 +297,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
   <div class="controls-row">
     <div class="segmented">
       <button class="on" id="scopeMineBtn" onclick="setScope('mine')">Mon marathon</button>
+      <button id="scopeTotalBtn" onclick="setScope('total')" title="Tous les programmes du catalogue, sans tenir compte de ta sélection">Marathon total</button>
       <button id="scopeAllBtn" onclick="setScope('manage')">Gestion marathon</button>
     </div>
     <div class="filters" id="typeFilters"></div>
@@ -1771,10 +1772,11 @@ function scrollToFirstUnwatched(){
   });
 }
 
-let currentScope = 'mine'; // 'mine' = marathon perso, 'manage' = gestion de la sélection
+let currentScope = 'mine'; // 'mine' = marathon perso, 'total' = tout le catalogue (sélection ignorée), 'manage' = gestion de la sélection
 function setScope(s){
   currentScope = s;
   document.getElementById('scopeMineBtn').classList.toggle('on', s==='mine');
+  document.getElementById('scopeTotalBtn').classList.toggle('on', s==='total');
   document.getElementById('scopeAllBtn').classList.toggle('on', s==='manage');
   render();
 }
@@ -1953,7 +1955,7 @@ function fmtDuration(min, episodes){
 }
 
 function updateStats(){
-  const mine = catalog.filter(d => isIncluded(d.id) && countsInStats(d));
+  const mine = catalog.filter(d => (currentScope === 'total' || isIncluded(d.id)) && countsInStats(d));
   const total = mine.length;
   const seen = mine.filter(d => tileProgress(d).isFullyWatched).length;
   document.getElementById('statSeen').textContent = seen;
