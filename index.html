@@ -2058,14 +2058,19 @@ function cardManage(d){
       <input type="checkbox" class="manage-checkbox" ${inc?'checked':''} onclick="event.stopPropagation();toggleIncludedFor('${d.id}')">
       <div class="card-studio">${d.type}</div>
       <div class="card-title" style="padding-right:0">${d.title}</div>
-      <div class="card-meta">${d.year || ''} ${d.duration ? '· '+fmtDuration(d.duration, d.episodes) : ''}</div>
+      <div class="card-meta">${d.year || ''} ${d.duration ? '· '+fmtDuration(d.duration, d.episodes, d) : ''}</div>
     </div>`;
 }
 
-function fmtDuration(min, episodes){
-  if (episodes) return `${episodes} ép.`;
-  const h = Math.floor(min/60), m = min%60;
-  return h ? `${h}h${m.toString().padStart(2,'0')}` : `${m}min`;
+function fmtDuration(min, episodes, d){
+  const fmt = m => { const h = Math.floor(m/60), mm = m%60; return h ? `${h}h${String(mm).padStart(2,'0')}` : `${mm}min`; };
+  if (episodes){
+    let total = 0;
+    if (d) for (let i = 1; i <= episodes; i++) total += episodeMinutes(d, i);
+    else total = (min||0) * episodes;
+    return total ? `${episodes} ép. · ${fmt(total)}` : `${episodes} ép.`;
+  }
+  return fmt(min);
 }
 
 function fmtHours(min){
@@ -2156,7 +2161,7 @@ async function openDetail(id, placementId){
   document.getElementById('detailBadges').innerHTML = `
     <span class="detail-badge" style="background:${studioColor(d.studio)}33;color:${studioColor(d.studio)}">${d.studio}</span>
     <span class="detail-badge" style="background:var(--bg3);color:var(--muted)">${d.type}</span>
-    <span class="detail-badge" style="background:var(--bg3);color:var(--muted)">${d.year||''}${d.duration?' · '+fmtDuration(d.duration,d.episodes):''}</span>`;
+    <span class="detail-badge" style="background:var(--bg3);color:var(--muted)">${d.year||''}${d.duration?' · '+fmtDuration(d.duration,d.episodes,d):''}</span>`;
   document.getElementById('detailStars').innerHTML = [1,2,3,4,5,6,7,8,9,10].map(n => `<button class="${p.rating===n?'lit':''}" onclick="setRatingFor('${id}',${n});refreshDetailRating()">${n}</button>`).join('');
   document.getElementById('detailAdminDelete').style.display = isAdmin ? 'inline-block' : 'none';
   document.getElementById('detailAdminEdit').style.display = isAdmin ? 'inline-block' : 'none';
