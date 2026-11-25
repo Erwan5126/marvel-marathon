@@ -1277,7 +1277,7 @@ function runtimeIssue(d){
 }
 function openRuntimeMgr(){
   const esc = t => String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-  const list = catalog.filter(d => runtimeIssue(d));
+  const list = catalog.filter(d => isReleased(d) && runtimeIssue(d));
   const body = document.getElementById('runtimeMgrBody');
   body.innerHTML = list.length ? list.map(d => `
     <div class="rt-row" data-id="${d.id}">
@@ -1306,7 +1306,7 @@ async function refetchRuntime(id, btn){
   } catch(e){ btn.textContent = '✗'; btn.title = e.message; btn.disabled = false; }
 }
 async function refetchAllRuntimes(btn){
-  const list = catalog.filter(d => runtimeIssue(d) && d.tmdbId);
+  const list = catalog.filter(d => isReleased(d) && runtimeIssue(d) && d.tmdbId);
   btn.disabled = true;
   let ok = 0, ko = 0;
   for (let i = 0; i < list.length; i++){
