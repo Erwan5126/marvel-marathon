@@ -139,6 +139,8 @@ button{font-family:inherit}
 .mosaic-item img{width:100%;height:100%;object-fit:cover;display:block}
 .mosaic-item-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;font-size:9px;color:#ddd;background:var(--bg2)}
 .mosaic-check{position:absolute;top:4px;right:4px;width:14px;height:14px;border-radius:50%;background:#2ecc71;color:#fff;font-size:7px;display:flex;align-items:center;justify-content:center}
+.mlink-badge{margin-top:6px;font-size:11px;padding:6px 10px;border-radius:8px;background:var(--bg3);color:var(--gold);display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:500}
+.mosaic-branch-badge{position:absolute;top:4px;left:4px;max-width:calc(100% - 26px);background:rgba(155,89,182,.92);color:#fff;font-size:8px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:2px 5px;border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mosaic-ep-badge{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.75);color:#eee;font-size:9px;text-align:center;padding:2px 4px;font-weight:600}
 
 .empty-msg{text-align:center;color:var(--muted);padding:3rem 1rem;font-size:13px}
@@ -426,6 +428,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="detail-body">
       <div class="detail-badges" id="detailBadges"></div>
       <div class="detail-title" id="detailTitle"></div>
+      <div id="detailLinks"></div>
 
       <div class="detail-actions">
         <button class="btn btn-primary" id="detailWatchBtn" onclick="toggleWatched()"></button>
@@ -1593,7 +1596,7 @@ function buildUniverseSections(items, sortMode = mosaicSort){
   const addTile = (uid, branch, tile) => {
     const col = (byCol[uid] = byCol[uid] || {});
     const b = branch || '';
-    (col[b] = col[b] || []).push(tile);
+    (col[b] = col[b] || []).push({ ...tile, _branch: b });
   };
   catalog.forEach(d => {
     if (!itemById[d.id]) return; // filtré par la recherche/les filtres en cours
@@ -1631,17 +1634,57 @@ function buildUniverseSections(items, sortMode = mosaicSort){
   activeUniverses.forEach(u => {
     const col = byCol[u.id];
     if (!col) return;
-    Object.values(col).forEach(list => list.sort(cmpTiles));
-    const groups = Object.keys(col)
-      .sort((x, y) => (x === '' ? -1 : y === '' ? 1 : cmpTiles(col[x][0], col[y][0]))) // tronc d'abord, puis branches par date de début
-      .map(b => ({ label: b, tiles: col[b] }));
-    sections.push({ key: 'uni:' + u.id, name: u.name, color: u.color || '#888', groups });
+    // Le tronc et les branches (ex. Nexus) sont fusionnés dans UNE seule liste triée :
+    // une branche n'est pas mise à l'écart, ses tuiles s'intercalent à leur place
+    // dans l'ordre actif, avec un badge indiquant la branche (voir cardMosaic).
+    let tiles = Object.values(col).flat().sort(cmpTiles);
+    // En Chronologique, la date narrative ne suffit pas : un programme daté de 2012 mais
+    // qui fait SUITE à Endgame (lien "suite" de la page Timelines) doit passer après lui.
+    if (sortMode === 'chrono') tiles = orderTilesWithLinks(tiles, col, cmpTiles);
+    sections.push({ key: 'uni:' + u.id, name: u.name, color: u.color || '#888', groups: [{ label: '', tiles }] });
   });
   const unassigned = items.filter(d => !placedIds.has(d.id))
     .sort(sortMode === 'chrono' ? chronoCompareItems : ((a, b) => releaseDateSortKey(a).localeCompare(releaseDateSortKey(b))));
   if (unassigned.length) sections.push({ key: 'uni:none', name: 'Non affectés à un univers', color: '#888', groups: [{ label: '', tiles: unassigned }] });
   return sections;
 }
+// Ordonne les tuiles d'un univers en respectant (1) le fil automatique de chaque colonne
+// (tronc / chaque branche reste dans l'ordre de ses dates) et (2) les liens manuels de type
+// "suite" (tout lien qui n'est pas une simple référence) dont les deux bouts sont dans cet
+// univers. Même principe que l'ordre chronologique global : tri topologique, la date
+// narrative ne servant qu'à départager les tuiles sans contrainte entre elles.
+function orderTilesWithLinks(tiles, columns, cmp){
+  const nid = t => t._catalogId + '::' + t._placementId;
+  const byId = {}; tiles.forEach(t => byId[nid(t)] = t);
+  const edges = {};
+  const addEdge = (a, b) => { if (!a || !b || a === b || !byId[a] || !byId[b]) return; (edges[a] = edges[a] || new Set()).add(b); };
+  Object.values(columns).forEach(list => {
+    const s = list.slice().sort(cmp);
+    for (let i = 0; i < s.length - 1; i++) addEdge(nid(s[i]), nid(s[i+1]));
+  });
+  const nodesOfCatalog = {};
+  tiles.forEach(t => (nodesOfCatalog[t._catalogId] = nodesOfCatalog[t._catalogId] || []).push(nid(t)));
+  chronoLinks.forEach(l => {
+    if (l.type === 'reference') return;
+    const aNodes = l.aPlacementId ? [l.a + '::' + l.aPlacementId] : (nodesOfCatalog[l.a] || []);
+    const bNodes = l.bPlacementId ? [l.b + '::' + l.bPlacementId] : (nodesOfCatalog[l.b] || []);
+    aNodes.forEach(x => bNodes.forEach(y => addEdge(x, y)));
+  });
+  const inDeg = {}; Object.keys(byId).forEach(k => inDeg[k] = 0);
+  Object.keys(edges).forEach(a => edges[a].forEach(b => inDeg[b]++));
+  const out = [], seen = new Set();
+  let avail = Object.keys(byId).filter(k => inDeg[k] === 0).map(k => byId[k]);
+  while (avail.length){
+    avail.sort(cmp);
+    const t = avail.shift(), k = nid(t);
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(t);
+    (edges[k] || []).forEach(n => { if (--inDeg[n] === 0) avail.push(byId[n]); });
+  }
+  tiles.forEach(t => { if (!seen.has(nid(t))) out.push(t); }); // filet de sécurité si un lien crée un cycle
+  return out;
+}
+
 // Tuiles dans l'ordre exact d'affichage (sections repliées exclues) — utilisé pour
 // le défilement vers le premier non-vu et la navigation entre fiches.
 function universeTilesFlat(items){
@@ -1784,6 +1827,7 @@ function cardMosaic(d){
     <div class="mosaic-item ${isFullyWatched?'watched':''}"${borderStyle} onclick="openDetail('${cid}','${d._placementId||''}')">
       ${d.poster ? `<img src="${d.poster}">` : `<div class="mosaic-item-ph">${d.title}</div>`}
       ${isFullyWatched ? '<div class="mosaic-check">✓</div>' : ''}
+      ${d._branch ? `<div class="mosaic-branch-badge" title="${String(d._branch).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}">${String(d._branch).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>` : ''}
       ${epLabel ? `<div class="mosaic-ep-badge">${epLabel}</div>` : ''}
     </div>`;
 }
@@ -1866,6 +1910,36 @@ function updateStats(){
 // ═══════════════════════════════════════════════════════════════
 let lastEpisodesCache = null; // {catalogId, episodes}
 
+// ── Liens de la page Timelines affichés dans la fiche (mêmes libellés et icônes) :
+// en Chronologique ce sont les liens chronologiques (🕐 voyage dans le temps,
+// 🌿 embranchement, 🌀 multivers), sinon les liens de l'ordre de sortie. Cliquer ouvre
+// la fiche du programme lié, directement sur la bonne époque quand le lien la précise. ──
+function linkCategoryIcon(cat){
+  if (cat === 'timetravel') return '🕐';
+  if (cat === 'branchsplit') return '🌿';
+  return '🌀';
+}
+function renderDetailLinks(d){
+  const box = document.getElementById('detailLinks');
+  const chrono = mosaicSort === 'chrono';
+  const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const rel = (chrono ? chronoLinks : links).filter(l => {
+    if (l.a !== d.id && l.b !== d.id) return false;
+    // Un lien rattaché à une époque précise de ce programme ne s'affiche que sur cette tuile.
+    const myPid = l.a === d.id ? l.aPlacementId : l.bPlacementId;
+    return !(myPid && currentDetailPlacementId && myPid !== currentDetailPlacementId);
+  });
+  box.innerHTML = rel.map(l => {
+    const otherId = l.a === d.id ? l.b : l.a;
+    const otherPid = l.a === d.id ? l.bPlacementId : l.aPlacementId;
+    const other = catalog.find(x => x.id === otherId);
+    if (!other) return '';
+    const isSuccessor = l.b === d.id; // ce programme EST la suite de l'autre
+    const label = l.label || (l.type === 'reference' ? 'Référence' : (isSuccessor ? 'Précédent' : 'Suite'));
+    return `<div class="mlink-badge" onclick="openDetail('${otherId}','${otherPid||''}')">${chrono ? linkCategoryIcon(l.category) : ''} ${esc(label)} : ${esc(other.title)}</div>`;
+  }).join('');
+}
+
 async function openDetail(id, placementId){
   const d = catalog.find(x => x.id === id);
   if (!d) return;
@@ -1892,6 +1966,7 @@ async function openDetail(id, placementId){
   summaryBtn.style.display = (isAdmin || d.storySummary) ? 'inline-block' : 'none';
   summaryBtn.textContent = d.storySummary ? '📖 Résumé' : '📖 Ajouter un résumé';
   updateDetailNavButtons();
+  renderDetailLinks(d);
 
   const ownedBtn = document.getElementById('detailOwnedBtn');
   ownedBtn.textContent = p.owned ? '★ Possédé' : 'Marquer comme possédé';
