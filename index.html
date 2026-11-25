@@ -289,8 +289,8 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
     <div class="segmented">
       <button class="on" id="mosaicSortReleaseBtn" onclick="setMosaicSort('release')">Ordre de sortie</button>
       <button id="mosaicSortChronoBtn" onclick="setMosaicSort('chrono')">Chronologique</button>
-      <button id="mosaicSortUniverseBtn" onclick="setMosaicSort('universe')">Par univers</button>
     </div>
+    <button class="fbtn" id="mosaicGroupBtn" onclick="toggleMosaicGroup()" title="Regrouper les tuiles par univers (le tri choisi s'applique dans chaque univers)">Par univers</button>
   </div>
   <div class="controls-row">
     <div class="segmented">
@@ -563,6 +563,7 @@ auth.onAuthStateChanged(user => {
   listenCatalog();
   listenProgress(user.uid);
   listenUniverses();
+  listenChronoUniverses();
   listenLinks();
   listenChronoLinks();
 });
@@ -586,7 +587,8 @@ function showPage(page){
 // ═══════════════════════════════════════════════════════════════
 // TIMELINES — état et réglages
 // ═══════════════════════════════════════════════════════════════
-let universes = [];
+let universes = [];        // univers de l'ordre de sortie (d.universe / d.branch)
+let chronoUniverses = [];  // univers de l'ordre chronologique (d.chronoPlacements[].universe)
 let links = [];
 let chronoLinks = []; // liens de la page Timelines, uniquement pour construire l'ordre chronologique de la Mosaïque
 let sortMode = 'chrono'; // 'chrono' | 'release'
@@ -596,7 +598,13 @@ function listenUniverses(){
   db.collection('universes').orderBy('order').onSnapshot(snap => {
     universes = snap.docs.map(d => ({ id:d.id, ...d.data() }));
     if (currentPage === 'timelines') renderBoard();
-    if (currentPage === 'marathon' && currentView === 'mosaic' && mosaicSort === 'universe') render();
+    if (currentPage === 'marathon' && currentView === 'mosaic' && mosaicGroup) render();
+  });
+}
+function listenChronoUniverses(){
+  db.collection('chronoUniverses').orderBy('order').onSnapshot(snap => {
+    chronoUniverses = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if (currentPage === 'marathon' && currentView === 'mosaic' && mosaicGroup) render();
   });
 }
 function listenLinks(){
@@ -1380,16 +1388,26 @@ function setView(v, btn){
   if (v === 'mosaic') scrollToFirstUnwatched();
 }
 
-let mosaicSort = localStorage.getItem('mm-mosaic-sort') || 'release'; // 'release' | 'chrono' | 'universe'
-if (!['release','chrono','universe'].includes(mosaicSort)) mosaicSort = 'release';
+let mosaicSort = localStorage.getItem('mm-mosaic-sort') || 'release'; // 'release' | 'chrono'
+// "Par univers" est un regroupement, indépendant du tri : il se combine avec l'un ou l'autre.
+let mosaicGroup = localStorage.getItem('mm-mosaic-group') === '1';
+if (mosaicSort === 'universe'){ mosaicSort = 'release'; mosaicGroup = true; } // ancienne version : 3e tri
+if (!['release','chrono'].includes(mosaicSort)) mosaicSort = 'release';
 function syncMosaicSortButtons(){
   document.getElementById('mosaicSortReleaseBtn').classList.toggle('on', mosaicSort === 'release');
   document.getElementById('mosaicSortChronoBtn').classList.toggle('on', mosaicSort === 'chrono');
-  document.getElementById('mosaicSortUniverseBtn').classList.toggle('on', mosaicSort === 'universe');
+  document.getElementById('mosaicGroupBtn').classList.toggle('on', mosaicGroup);
 }
 function setMosaicSort(mode){
   mosaicSort = mode;
   localStorage.setItem('mm-mosaic-sort', mode);
+  syncMosaicSortButtons();
+  render();
+  if (currentView === 'mosaic') scrollToFirstUnwatched();
+}
+function toggleMosaicGroup(){
+  mosaicGroup = !mosaicGroup;
+  localStorage.setItem('mm-mosaic-group', mosaicGroup ? '1' : '0');
   syncMosaicSortButtons();
   render();
   if (currentView === 'mosaic') scrollToFirstUnwatched();
@@ -1555,28 +1573,43 @@ function buildChronoOrderInstances(items){
   return result;
 }
 
-// ── Mode "Par univers" : même regroupement que la page Timelines — une section par
-// univers (dans l'ordre défini par l'admin), le tronc d'abord puis chaque branche,
-// et dans chaque colonne les paquets triés par date narrative. Un programme placé
-// dans plusieurs univers/branches (ou en plusieurs paquets) apparaît à chaque endroit
-// où il est placé. Les programmes sans aucun placement vont dans une dernière section.
-function buildUniverseSections(items){
+// ── Regroupement "Par univers" (option combinable avec le tri choisi) : même découpage
+// que la page Timelines — une section par univers (dans l'ordre défini par l'admin),
+// le tronc d'abord puis chaque branche. Dans chaque colonne, les tuiles suivent le tri
+// actif : date narrative en "Chronologique", date de sortie en "Ordre de sortie".
+// Un programme placé dans plusieurs univers/branches (ou en plusieurs paquets d'épisodes)
+// apparaît à chaque endroit où il est placé. Les programmes sans aucun placement vont
+// dans une dernière section.
+function buildUniverseSections(items, sortMode = mosaicSort){
   const itemById = {}; items.forEach(d => itemById[d.id] = d);
-  const knownUniverse = {}; universes.forEach(u => knownUniverse[u.id] = true);
+  // Comme sur la page Timelines, il y a DEUX jeux d'univers distincts : en
+  // "Chronologique" ce sont les univers chronologiques (avec les paquets/placements
+  // d.chronoPlacements), en "Ordre de sortie" ce sont les univers de sortie (avec
+  // l'affectation simple d.universe / d.branch).
+  const activeUniverses = sortMode === 'chrono' ? chronoUniverses : universes;
+  const knownUniverse = {}; activeUniverses.forEach(u => knownUniverse[u.id] = true);
   const byCol = {}; // universeId -> { branche ('' = tronc) -> [tuiles] }
   const placedIds = new Set();
+  const addTile = (uid, branch, tile) => {
+    const col = (byCol[uid] = byCol[uid] || {});
+    const b = branch || '';
+    (col[b] = col[b] || []).push(tile);
+  };
   catalog.forEach(d => {
     if (!itemById[d.id]) return; // filtré par la recherche/les filtres en cours
-    (d.chronoPlacements||[]).forEach(p => {
-      if (!p.universe || !knownUniverse[p.universe]) return;
+    if (sortMode === 'chrono'){
+      (d.chronoPlacements||[]).forEach(p => {
+        if (!p.universe || !knownUniverse[p.universe]) return;
+        placedIds.add(d.id);
+        addTile(p.universe, p.branch, { ...d, _catalogId: d.id, _placementId: p.id, _epFrom: p.epFrom||null, _epTo: p.epTo||null, _storyDate: p.storyDate||'', _yearOrder: p.yearOrder });
+      });
+    } else if (d.universe && knownUniverse[d.universe]){
       placedIds.add(d.id);
-      const col = (byCol[p.universe] = byCol[p.universe] || {});
-      const b = p.branch || '';
-      (col[b] = col[b] || []).push({ ...d, _catalogId: d.id, _placementId: p.id, _epFrom: p.epFrom||null, _epTo: p.epTo||null, _storyDate: p.storyDate||'', _yearOrder: p.yearOrder });
-    });
+      addTile(d.universe, d.branch, { ...d, _catalogId: d.id, _placementId: null });
+    }
   });
   // Date narrative absente = en dernier dans sa colonne (et non en année 0 = en tête).
-  const cmpTiles = (a, b) => {
+  const cmpStory = (a, b) => {
     const pa = a._storyDate ? parseStoryDateMarathon(a._storyDate) : { year: 9999, month: null, day: null };
     const pb = b._storyDate ? parseStoryDateMarathon(b._storyDate) : { year: 9999, month: null, day: null };
     if (pa.year !== pb.year) return pa.year - pb.year;
@@ -1589,8 +1622,13 @@ function buildUniverseSections(items){
     if (oa != null && ob != null && oa !== ob) return oa - ob;
     return releaseDateSortKey(a).localeCompare(releaseDateSortKey(b));
   };
+  // Ordre de sortie : par date de sortie réelle (sans date = en dernier), puis date
+  // narrative pour départager les paquets d'une même série qui se suivent.
+  const cmpTiles = sortMode === 'chrono'
+    ? cmpStory
+    : (a, b) => releaseDateSortKey(a).localeCompare(releaseDateSortKey(b)) || cmpStory(a, b);
   const sections = [];
-  universes.forEach(u => {
+  activeUniverses.forEach(u => {
     const col = byCol[u.id];
     if (!col) return;
     Object.values(col).forEach(list => list.sort(cmpTiles));
@@ -1599,7 +1637,8 @@ function buildUniverseSections(items){
       .map(b => ({ label: b, tiles: col[b] }));
     sections.push({ key: 'uni:' + u.id, name: u.name, color: u.color || '#888', groups });
   });
-  const unassigned = items.filter(d => !placedIds.has(d.id)).sort(chronoCompareItems);
+  const unassigned = items.filter(d => !placedIds.has(d.id))
+    .sort(sortMode === 'chrono' ? chronoCompareItems : ((a, b) => releaseDateSortKey(a).localeCompare(releaseDateSortKey(b))));
   if (unassigned.length) sections.push({ key: 'uni:none', name: 'Non affectés à un univers', color: '#888', groups: [{ label: '', tiles: unassigned }] });
   return sections;
 }
@@ -1627,8 +1666,8 @@ function renderUniverseSections(items, main){
 
 function scrollToFirstUnwatched(){
   let list = filteredData();
-  if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
-  else if (mosaicSort === 'universe') list = universeTilesFlat(list);
+  if (mosaicGroup) list = universeTilesFlat(list);
+  else if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
   const idx = list.findIndex(d => !tileProgress(d).isFullyWatched);
   if (idx === -1) return;
   requestAnimationFrame(() => {
@@ -1694,7 +1733,7 @@ function render(){
     renderTierList(list, main);
   } else {
     // Mosaïque — seule vue de "Mon marathon" désormais
-    if (mosaicSort === 'universe'){
+    if (mosaicGroup){
       renderUniverseSections(list, main);
     } else {
       if (mosaicSort === 'chrono') list = buildChronoOrderInstances(list);
@@ -1900,8 +1939,8 @@ function navList(){
     return list.filter(d => progress[d.id]?.rating === rating)
       .sort((a,b) => (progress[a.id]?.tierPos ?? 9999) - (progress[b.id]?.tierPos ?? 9999));
   }
+  if (currentView === 'mosaic' && mosaicGroup) return universeTilesFlat(list);
   if (currentView === 'mosaic' && mosaicSort === 'chrono') return buildChronoOrderInstances(list);
-  if (currentView === 'mosaic' && mosaicSort === 'universe') return universeTilesFlat(list);
   return list;
 }
 
