@@ -1750,7 +1750,11 @@ function buildChronoOrderInstances(items){
 // apparaît à chaque endroit où il est placé. Les programmes sans aucun placement vont
 // dans une dernière section.
 function buildUniverseSections(items, sortMode = mosaicSort){
-  const itemById = {}; items.forEach(d => itemById[d.id] = d);
+  // L'ordre est TOUJOURS calculé sur tout le catalogue (sinon un lien "suite" passant par un
+  // programme non sélectionné/filtré, ex. Apocalypse → Days of Future Past, serait perdu et
+  // désordonnerait la liste) ; on ne retire les tuiles masquées qu'à la toute fin.
+  const visibleIds = new Set(items.map(d => d.id));
+  const itemById = {}; catalog.forEach(d => itemById[d.id] = d);
   // Comme sur la page Timelines, il y a DEUX jeux d'univers distincts : en
   // "Chronologique" ce sont les univers chronologiques (avec les paquets/placements
   // d.chronoPlacements), en "Ordre de sortie" ce sont les univers de sortie (avec
@@ -1765,7 +1769,6 @@ function buildUniverseSections(items, sortMode = mosaicSort){
     (col[b] = col[b] || []).push({ ...tile, _branch: b });
   };
   catalog.forEach(d => {
-    if (!itemById[d.id]) return; // filtré par la recherche/les filtres en cours
     if (sortMode === 'chrono'){
       (d.chronoPlacements||[]).forEach(p => {
         if (!p.universe || !knownUniverse[p.universe]) return;
@@ -1807,9 +1810,11 @@ function buildUniverseSections(items, sortMode = mosaicSort){
     // En Chronologique, la date narrative ne suffit pas : un programme daté de 2012 mais
     // qui fait SUITE à Endgame (lien "suite" de la page Timelines) doit passer après lui.
     if (sortMode === 'chrono') tiles = orderTilesWithLinks(tiles, col, cmpTiles);
+    tiles = tiles.filter(t => visibleIds.has(t._catalogId || t.id));
+    if (!tiles.length) return;
     sections.push({ key: 'uni:' + u.id, name: u.name, color: u.color || '#888', groups: [{ label: '', tiles }] });
   });
-  const unassigned = items.filter(d => !placedIds.has(d.id))
+  const unassigned = catalog.filter(d => !placedIds.has(d.id) && visibleIds.has(d.id))
     .sort(sortMode === 'chrono' ? chronoCompareItems : ((a, b) => releaseDateSortKey(a).localeCompare(releaseDateSortKey(b))));
   if (unassigned.length) sections.push({ key: 'uni:none', name: 'Non affectés à un univers', color: '#888', groups: [{ label: '', tiles: unassigned }] });
   return sections;
