@@ -1001,6 +1001,56 @@ function maybeInitialScroll(){
   didInitialScroll = true;
   scrollToFirstUnwatched();
 }
+// ── Sorties : un programme pas encore sorti ne compte pas dans les compteurs ;
+// une série en cours de diffusion (1 épisode par semaine) compte comme "vue"
+// quand tous les épisodes DÉJÀ diffusés sont vus, donc le compteur évolue chaque semaine. ──
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function isReleased(d){
+  if (d.releaseDate) return d.releaseDate <= todayStr();
+  if (d.year) return Number(d.year) <= new Date().getFullYear();
+  return false; // ni date ni année : pas encore annoncé
+}
+const AIRED_TTL = 6*3600*1000;
+let airedCache = {};
+try { airedCache = JSON.parse(localStorage.getItem('mm-aired') || '{}'); } catch(e){ airedCache = {}; }
+let airedFetching = false;
+function airedKey(d){ return d.tmdbId + ':' + d.tmdbSeason; }
+// Nombre d'épisodes déjà diffusés (null = inconnu → on prend le total du catalogue)
+function airedEpisodes(d){
+  if (d.type !== 'Série' || !d.tmdbId || !d.tmdbSeason) return null;
+  const c = airedCache[airedKey(d)];
+  return c ? Math.min(c.n, d.episodes || c.n) : null;
+}
+function seriesNeedsAiredCheck(d){
+  if (d.type !== 'Série' || !d.tmdbId || !d.tmdbSeason || !isReleased(d)) return false;
+  if (!d.releaseDate) return false;
+  return (Date.now() - new Date(d.releaseDate).getTime()) < 200*86400000; // saison récente = potentiellement en cours
+}
+async function refreshAiredEpisodes(){
+  if (airedFetching) return;
+  const todo = catalog.filter(d => seriesNeedsAiredCheck(d) && !(airedCache[airedKey(d)] && Date.now() - airedCache[airedKey(d)].t < AIRED_TTL));
+  if (!todo.length) return;
+  airedFetching = true;
+  let changed = false;
+  for (const d of todo){
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/tv/${d.tmdbId}/season/${d.tmdbSeason}?api_key=${TMDB_API_KEY}&language=fr-FR`);
+      if (!res.ok) continue;
+      const j = await res.json();
+      const today = todayStr();
+      const n = (j.episodes||[]).filter(e => e.air_date && e.air_date <= today).length;
+      const prev = airedCache[airedKey(d)];
+      airedCache[airedKey(d)] = { n, t: Date.now() };
+      if (!prev || prev.n !== n) changed = true;
+    } catch(e){ /* réseau : on garde l'ancien */ }
+  }
+  airedFetching = false;
+  try { localStorage.setItem('mm-aired', JSON.stringify(airedCache)); } catch(e){}
+  if (changed) render();
+}
+// Un programme (ou une tuile) compte dans les compteurs s'il est sorti
+function countsInStats(d){ return isReleased(d); }
+
 function listenCatalog(){
   db.collection('catalog').onSnapshot(snap => {
     catalog = snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -1008,6 +1058,7 @@ function listenCatalog(){
     buildFilters();
     render();
     maybeInitialScroll();
+    refreshAiredEpisodes();
   }, err => console.error('Erreur lecture catalogue', err));
 }
 
@@ -1694,13 +1745,14 @@ function renderUniverseSections(items, main){
   const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   main.innerHTML = buildUniverseSections(items).map(s => {
     const tiles = s.groups.flatMap(g => g.tiles);
-    const watched = tiles.filter(t => tileProgress(t).isFullyWatched).length;
+    const counted = tiles.filter(t => countsInStats(t._catalogId ? (catalog.find(x => x.id === t._catalogId) || t) : t));
+    const watched = counted.filter(t => tileProgress(t).isFullyWatched).length;
     return `
       <div class="studio-section">
         <div class="studio-header" onclick="toggleCollapse('${s.key}')">
           <div class="studio-dot" style="background:${s.color}"></div>
           <div class="studio-name">${esc(s.name)}</div>
-          <div class="studio-prog">${watched}/${tiles.length} vus</div>
+          <div class="studio-prog">${watched}/${counted.length} vus</div>
         </div>
         ${collapsed[s.key] ? '' : s.groups.map(g => `${g.label ? `<div class="uni-branch-label">${esc(g.label)}</div>` : ''}<div class="mosaic-grid">${g.tiles.map(cardMosaic).join('')}</div>`).join('')}
       </div>`;
@@ -1810,9 +1862,15 @@ function tileProgress(d){
     const packetTotal = Math.max(1, to - from + 1);
     let done = 0;
     for (let n = from; n <= to; n++){ if (watchedMap[n]) done++; }
+    // Contour : toujours calculé sur le total réel de la saison/du paquet (ne s'adapte pas aux sorties)
     const pct = Math.min(100, Math.round(done / packetTotal * 100));
-    isFullyWatched = pct >= 100;
-    if (!isFullyWatched && pct > 0) borderStyle = ` style="border-image:conic-gradient(rgba(255,255,255,.18) 0 ${100-pct}%, #2ecc71 ${100-pct}% 100%) 1"`;
+    // "Vu" (coche + compteurs) : seulement les épisodes déjà diffusés
+    const aired = airedEpisodes(d._catalogId ? (catalog.find(x => x.id === d._catalogId) || d) : d);
+    const toAired = aired !== null ? Math.min(to, aired) : to;
+    let doneAired = 0;
+    for (let n = from; n <= toAired; n++){ if (watchedMap[n]) doneAired++; }
+    isFullyWatched = toAired >= from ? doneAired >= (toAired - from + 1) : pct >= 100;
+    if (pct > 0 && pct < 100) borderStyle = ` style="border-image:conic-gradient(rgba(255,255,255,.18) 0 ${100-pct}%, #2ecc71 ${100-pct}% 100%) 1"`;
   } else {
     isFullyWatched = !!p.watched;
   }
@@ -1895,9 +1953,9 @@ function fmtDuration(min, episodes){
 }
 
 function updateStats(){
-  const mine = catalog.filter(d => isIncluded(d.id));
+  const mine = catalog.filter(d => isIncluded(d.id) && countsInStats(d));
   const total = mine.length;
-  const seen = mine.filter(d => progress[d.id]?.watched).length;
+  const seen = mine.filter(d => tileProgress(d).isFullyWatched).length;
   document.getElementById('statSeen').textContent = seen;
   document.getElementById('statTotal').textContent = total;
   const pct = total ? Math.round(seen/total*100) : 0;
