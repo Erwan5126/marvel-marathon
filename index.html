@@ -285,7 +285,7 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
 
 <div class="controls" id="marathonControls">
   <div class="controls-row">
-    <input type="text" class="search" id="searchInput" name="mm-search-query" placeholder="Rechercher..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="render()">
+    <input type="search" class="search" id="searchInput" name="mm-filter-titres" placeholder="Rechercher..." autocomplete="off" data-lpignore="true" data-1p-ignore readonly onfocus="this.removeAttribute('readonly')" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="render()">
     <div class="view-icons">
       <button class="icon-toggle on" title="Vue mosaïque" onclick="setView('mosaic',this)">▦</button>
       <button class="icon-toggle" title="Tier List" onclick="setView('tier',this)">🏆</button>
@@ -344,9 +344,9 @@ svg.links-svg{position:absolute;top:0;left:0;pointer-events:none;overflow:visibl
       <button class="on" id="loginTabSignin" onclick="setLoginTab('signin')">Se connecter</button>
       <button id="loginTabSignup" onclick="setLoginTab('signup')">Créer un compte</button>
     </div>
-    <div class="field"><label>Email</label><input type="email" id="loginEmail"></div>
+    <div class="field"><label>Email</label><input type="email" id="loginEmail" name="email" autocomplete="username"></div>
     <div class="field" id="loginNameField" style="display:none"><label>Pseudo (affiché aux autres)</label><input type="text" id="loginName" placeholder="ex: Erwan"></div>
-    <div class="field"><label>Mot de passe</label><input type="password" id="loginPass"></div>
+    <div class="field"><label>Mot de passe</label><input type="password" id="loginPass" name="password" autocomplete="current-password"></div>
     <div id="loginError" style="color:var(--red);font-size:12px;margin-bottom:8px;display:none"></div>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="closeOverlay('loginOverlay')">Annuler</button>
@@ -1533,6 +1533,14 @@ function toggleOwnedFilter(v){
   buildFilters();
   render();
 }
+
+// Sécurité : le navigateur peut préremplir la recherche avec l'email enregistré → on la vide
+function purgeAutofilledSearch(){
+  const el = document.getElementById('searchInput');
+  if (el && document.activeElement !== el && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(el.value.trim())){ el.value = ''; render(); }
+}
+[300, 1000, 2500].forEach(t => setTimeout(purgeAutofilledSearch, t));
+window.addEventListener('pageshow', () => setTimeout(purgeAutofilledSearch, 100));
 
 function filteredData(){
   const q = document.getElementById('searchInput').value.toLowerCase();
